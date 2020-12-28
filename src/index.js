@@ -177,7 +177,7 @@ export default class Fuse {
 
       // Deploy new asset to existing pool via SDK
       try {
-        var [assetAddress, receipt] = await this.deployCToken(conf, true, collateralFactor, null, options);
+        var [assetAddress, receipt] = await this.deployCToken(conf, true, collateralFactor, Fuse.CERC20_DELEGATE_CONTRACT_ADDRESS ? Fuse.CERC20_DELEGATE_CONTRACT_ADDRESS : null, options);
       } catch (error) {
         throw "Deployment of asset to Fuse pool failed: " + (error.message ? error.message : error);
       }
