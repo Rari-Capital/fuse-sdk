@@ -9,6 +9,7 @@ export default class Fuse {
   static FUSE_POOL_DIRECTORY_CONTRACT_ADDRESS = "0xDc64a140Aa3E981100a9becA4E685f962f0cF6C9";
   static COMPTROLLER_IMPLEMENTATION_CONTRACT_ADDRESS;
   static CERC20_DELEGATE_CONTRACT_ADDRESS;
+  static CETHER_DELEGATE_CONTRACT_ADDRESS;
   static OPEN_ORACLE_PRICE_DATA_CONTRACT_ADDRESS = "0xc629c26dced4277419cde234012f8160a0278a79";
 
   constructor(web3Provider) {
@@ -132,8 +133,8 @@ export default class Fuse {
             REPORTER: 2,
             TWAP: 3
           };
-          var ethConfig = [{ underlying: "0x0000000000000000000000000000000000000000", symbolHash: Web3.utils.soliditySha3("ETH"), baseUnit: Web3.utils.toBN(10).pow(Web3.utils.toBN(18)), priceSource: PriceSource.REPORTER, fixedPrice: 0, uniswapMarket: "0xB4e16d0168e52d35CaCD2c6185b44281Ec28C9Dc", isUniswapReversed: true }];
-          var deployArgs = [Fuse.OPEN_ORACLE_PRICE_DATA_CONTRACT_ADDRESS, reporter, conf.anchorMantissa, conf.anchorPeriod, ethConfig, conf.maxTokens];
+          var tokenConfigs = [{ underlying: "0x0000000000000000000000000000000000000000", symbolHash: Web3.utils.soliditySha3("ETH"), baseUnit: Web3.utils.toBN(1e18).toString(), priceSource: PriceSource.REPORTER, fixedPrice: 0, uniswapMarket: "0xB4e16d0168e52d35CaCD2c6185b44281Ec28C9Dc", isUniswapReversed: true }];
+          var deployArgs = [Fuse.OPEN_ORACLE_PRICE_DATA_CONTRACT_ADDRESS, reporter, conf.anchorMantissa, conf.anchorPeriod, tokenConfigs, conf.maxTokens];
           priceOracle = await priceOracle.deploy({ data: "0x" + openOracleContracts["contracts/Uniswap/UniswapAnchoredView.sol:UniswapAnchoredView"].bin, arguments: deployArgs }).send(options);
           break;
         case "UniswapView":
@@ -145,8 +146,8 @@ export default class Fuse {
             REPORTER: 2,
             TWAP: 3
           };
-          var ethConfig = [{ underlying: "0x0000000000000000000000000000000000000000", symbolHash: Web3.utils.soliditySha3("ETH"), baseUnit: Web3.utils.toBN(10).pow(Web3.utils.toBN(18)), priceSource: PriceSource.TWAP, fixedPrice: 0, uniswapMarket: "0xB4e16d0168e52d35CaCD2c6185b44281Ec28C9Dc", isUniswapReversed: true }];
-          var deployArgs = [conf.anchorPeriod, ethConfig, conf.maxTokens];
+          var tokenConfigs = [{ underlying: "0x0000000000000000000000000000000000000000", symbolHash: Web3.utils.soliditySha3("ETH"), baseUnit: Web3.utils.toBN(1e18).toString(), priceSource: PriceSource.TWAP, fixedPrice: 0, uniswapMarket: "0xB4e16d0168e52d35CaCD2c6185b44281Ec28C9Dc", isUniswapReversed: true }];
+          var deployArgs = [conf.anchorPeriod, tokenConfigs, conf.maxTokens];
           priceOracle = await priceOracle.deploy({ data: "0x" + openOracleContracts["contracts/Uniswap/UniswapView.sol:UniswapView"].bin, arguments: deployArgs }).send(options);
           break;
         default:
@@ -191,7 +192,7 @@ export default class Fuse {
 
       // Deploy new asset to existing pool via SDK
       try {
-        var [assetAddress, receipt] = await this.deployCToken(conf, true, collateralFactor, Fuse.CERC20_DELEGATE_CONTRACT_ADDRESS ? Fuse.CERC20_DELEGATE_CONTRACT_ADDRESS : null, options, bypassPriceFeedCheck);
+        var [assetAddress, receipt] = await this.deployCToken(conf, true, collateralFactor, options, bypassPriceFeedCheck);
       } catch (error) {
         throw "Deployment of asset to Fuse pool failed: " + (error.message ? error.message : error);
       }
@@ -206,26 +207,30 @@ export default class Fuse {
       return interestRateModel.options.address;
     };
     
-    this.deployCToken = async function(conf, supportMarket, collateralFactor, implementationAddress, options, bypassPriceFeedCheck) {
-      return conf.underlying !== undefined && conf.underlying !== null && conf.underlying.length > 0 ? await this.deployCErc20(conf, supportMarket, collateralFactor, implementationAddress, options, bypassPriceFeedCheck) : [await this.deployCEther(conf, supportMarket, collateralFactor, options)];
+    this.deployCToken = async function(conf, supportMarket, collateralFactor, options, bypassPriceFeedCheck) {
+      return conf.underlying !== undefined && conf.underlying !== null && conf.underlying.length > 0 ? await this.deployCErc20(conf, supportMarket, collateralFactor, Fuse.CERC20_DELEGATE_CONTRACT_ADDRESS ? Fuse.CERC20_DELEGATE_CONTRACT_ADDRESS : null, options, bypassPriceFeedCheck) : [await this.deployCEther(conf, supportMarket, collateralFactor, Fuse.CETHER_DELEGATE_CONTRACT_ADDRESS ? Fuse.CETHER_DELEGATE_CONTRACT_ADDRESS : null, options)];
     };
     
-    this.deployCEther = async function(conf, supportMarket, collateralFactor, options) {
-      var cEther = new this.web3.eth.Contract(JSON.parse(contracts["contracts/CEther.sol:CEther"].abi));
-      let deployArgs = [conf.comptroller, conf.interestRateModel, conf.initialExchangeRateMantissa.toString(), conf.name, conf.symbol, conf.decimals, conf.admin];
-      cEther = await cEther.deploy({ data: "0x" + contracts["contracts/CEther.sol:CEther"].bin, arguments: deployArgs }).send(options);
-
-      if (supportMarket) {
-        var comptroller = new this.web3.eth.Contract(JSON.parse(contracts["contracts/Comptroller.sol:Comptroller"].abi), conf.comptroller);
-        await comptroller.methods._supportMarket(cEther.options.address).send(options);
+    this.deployCEther = async function(conf, supportMarket, collateralFactor, implementationAddress, options) {
+      // Deploy CEtherDelegate implementation contract if necessary
+      if (!implementationAddress) {
+        var cEtherDelegate = new this.web3.eth.Contract(JSON.parse(contracts["contracts/CEtherDelegate.sol:CEtherDelegate"].abi));
+        cEtherDelegate = await cEtherDelegate.deploy({ data: "0x" + contracts["contracts/CEtherDelegate.sol:CEtherDelegate"].bin }).send(options);
+        implementationAddress = cEtherDelegate.options.address;
       }
 
-      if (collateralFactor) {
-        var comptroller = new this.web3.eth.Contract(JSON.parse(contracts["contracts/Comptroller.sol:Comptroller"].abi), conf.comptroller);
-        await comptroller.methods._setCollateralFactor(cEther.options.address, collateralFactor).send(options);
-      }
+      // Deploy CEtherDelegator proxy contract if necessary
+      var cEtherDelegator = new this.web3.eth.Contract(JSON.parse(contracts["contracts/CEtherDelegator.sol:CEtherDelegator"].abi));
+      let deployArgs = [conf.comptroller, conf.interestRateModel, conf.initialExchangeRateMantissa.toString(), conf.name, conf.symbol, conf.decimals, conf.admin, implementationAddress, "0x0"];
+      cEtherDelegator = await cEtherDelegator.deploy({ data: "0x" + contracts["contracts/CEtherDelegator.sol:CEtherDelegator"].bin, arguments: deployArgs }).send(options);
 
-      return cEther.options.address;
+      // Register new asset with Comptroller
+      var comptroller = new this.web3.eth.Contract(JSON.parse(contracts["contracts/Comptroller.sol:Comptroller"].abi), conf.comptroller);
+      if (supportMarket) await comptroller.methods._supportMarket(cEtherDelegator.options.address).send(options);
+      if (collateralFactor) await comptroller.methods._setCollateralFactor(cEtherDelegator.options.address, collateralFactor).send(options);
+
+      // Return cToken proxy and implementation contract addresses
+      return [cEtherDelegator.options.address, implementationAddress];
     };
     
     this.deployCErc20 = async function(conf, supportMarket, collateralFactor, implementationAddress, options, bypassPriceFeedCheck) {
@@ -309,13 +314,13 @@ export default class Fuse {
             var fixedUsd = confirm("Should the price of this token be fixed to 1 USD?");
 
             if (fixedUsd) {
-              await uniswapOrUniswapAnchoredView.methods.add([{ underlying: conf.underlying, symbolHash: Web3.utils.soliditySha3(underlyingSymbol), baseUnit: Web3.utils.toBN(10).pow(Web3.utils.toBN(underlyingDecimals)), priceSource: PriceSource.FIXED_USD, fixedPrice: Web3.utils.toBN(1e6), uniswapMarket: "0x0000000000000000000000000000000000000000", isUniswapReversed: false }]).send(options);
+              await uniswapOrUniswapAnchoredView.methods.add([{ underlying: conf.underlying, symbolHash: Web3.utils.soliditySha3(underlyingSymbol), baseUnit: Web3.utils.toBN(10).pow(Web3.utils.toBN(underlyingDecimals)).toString(), priceSource: PriceSource.FIXED_USD, fixedPrice: Web3.utils.toBN(1e6).toString(), uniswapMarket: "0x0000000000000000000000000000000000000000", isUniswapReversed: false }]).send(options);
             } else {
               var uniswapV2Pair = prompt("Please enter the underlying token's ETH-based Uniswap V2 pair address (if available):");
       
               if (uniswapV2Pair.length > 0) {
                 var isNotReversed = confirm("Press OK if the Uniswap V2 pair is " + underlyingSymbol + "/ETH? If it is reversed (ETH/" + underlyingSymbol + "), press Cancel.");
-                await uniswapOrUniswapAnchoredView.methods.add([{ underlying: conf.underlying, symbolHash: Web3.utils.soliditySha3(underlyingSymbol), baseUnit: Web3.utils.toBN(10).pow(Web3.utils.toBN(underlyingDecimals)), priceSource: isUniswapAnchoredView ? PriceSource.REPORTER : PriceSource.TWAP, fixedPrice: 0, uniswapMarket: uniswapV2Pair, isUniswapReversed: !isNotReversed }]).send(options);
+                await uniswapOrUniswapAnchoredView.methods.add([{ underlying: conf.underlying, symbolHash: Web3.utils.soliditySha3(underlyingSymbol), baseUnit: Web3.utils.toBN(10).pow(Web3.utils.toBN(underlyingDecimals)).toString(), priceSource: isUniswapAnchoredView ? PriceSource.REPORTER : PriceSource.TWAP, fixedPrice: 0, uniswapMarket: uniswapV2Pair, isUniswapReversed: !isNotReversed }]).send(options);
               }
             }
           }
@@ -325,7 +330,7 @@ export default class Fuse {
       // Deploy CErc20Delegate implementation contract if necessary
       if (!implementationAddress) {
         var cErc20Delegate = new this.web3.eth.Contract(JSON.parse(contracts["contracts/CErc20Delegate.sol:CErc20Delegate"].abi));
-        cErc20Delegate = await cErc20Delegate.deploy({ data: "0x" + contracts["contracts/CErc20Delegate.sol:CErc20Delegate"].bin, arguments: deployArgs }).send(options);
+        cErc20Delegate = await cErc20Delegate.deploy({ data: "0x" + contracts["contracts/CErc20Delegate.sol:CErc20Delegate"].bin }).send(options);
         implementationAddress = cErc20Delegate.options.address;
       }
 
