@@ -2,11 +2,13 @@
 import Web3 from "web3";
 
 var fusePoolDirectoryAbi = require(__dirname + "/abi/FusePoolDirectory.json");
+var fuseSafeLiquidatorAbi = require(__dirname + "/abi/FuseSafeLiquidator.json");
 var contracts = require(__dirname + "/contracts/compound-protocol.json").contracts;
 var openOracleContracts = require(__dirname + "/contracts/open-oracle.json").contracts;
 
 export default class Fuse {
   static FUSE_POOL_DIRECTORY_CONTRACT_ADDRESS = "0xDc64a140Aa3E981100a9becA4E685f962f0cF6C9";
+  static FUSE_SAFE_LIQUIDATOR_CONTRACT_ADDRESS = "0x0165878A594ca255338adfa4d48449f69242Eb8F";
   static COMPTROLLER_IMPLEMENTATION_CONTRACT_ADDRESS;
   static CERC20_DELEGATE_CONTRACT_ADDRESS;
   static CETHER_DELEGATE_CONTRACT_ADDRESS;
@@ -15,7 +17,8 @@ export default class Fuse {
   constructor(web3Provider) {
     this.web3 = new Web3(web3Provider);
     this.contracts = {
-      FusePoolDirectory: new this.web3.eth.Contract(fusePoolDirectoryAbi, Fuse.FUSE_POOL_DIRECTORY_CONTRACT_ADDRESS)
+      FusePoolDirectory: new this.web3.eth.Contract(fusePoolDirectoryAbi, Fuse.FUSE_POOL_DIRECTORY_CONTRACT_ADDRESS),
+      FuseSafeLiquidator: new this.web3.eth.Contract(fuseSafeLiquidatorAbi, Fuse.FUSE_SAFE_LIQUIDATOR_CONTRACT_ADDRESS)
     };
 
     this.getCreate2Address = function(creatorAddress, salt, byteCode) {
@@ -180,7 +183,7 @@ export default class Fuse {
       return [unitroller.options.address, implementationAddress];
     };
 
-    this.deployAsset = async function(conf, collateralFactor, options, bypassPriceFeedCheck) {
+    this.deployAsset = async function(conf, collateralFactor, reserveFactor, options, bypassPriceFeedCheck) {
       // Deploy new interest rate model via SDK if requested
       if (["WhitePaperInterestRateModel", "JumpRateModel", "DAIInterestRateModelV2"].indexOf(conf.interestRateModel) >= 0) {
         try {
@@ -192,7 +195,7 @@ export default class Fuse {
 
       // Deploy new asset to existing pool via SDK
       try {
-        var [assetAddress, receipt] = await this.deployCToken(conf, true, collateralFactor, options, bypassPriceFeedCheck);
+        var [assetAddress, receipt] = await this.deployCToken(conf, true, collateralFactor, reserveFactor, options, bypassPriceFeedCheck);
       } catch (error) {
         throw "Deployment of asset to Fuse pool failed: " + (error.message ? error.message : error);
       }
@@ -207,11 +210,11 @@ export default class Fuse {
       return interestRateModel.options.address;
     };
     
-    this.deployCToken = async function(conf, supportMarket, collateralFactor, options, bypassPriceFeedCheck) {
-      return conf.underlying !== undefined && conf.underlying !== null && conf.underlying.length > 0 ? await this.deployCErc20(conf, supportMarket, collateralFactor, Fuse.CERC20_DELEGATE_CONTRACT_ADDRESS ? Fuse.CERC20_DELEGATE_CONTRACT_ADDRESS : null, options, bypassPriceFeedCheck) : [await this.deployCEther(conf, supportMarket, collateralFactor, Fuse.CETHER_DELEGATE_CONTRACT_ADDRESS ? Fuse.CETHER_DELEGATE_CONTRACT_ADDRESS : null, options)];
+    this.deployCToken = async function(conf, supportMarket, collateralFactor, reserveFactor, options, bypassPriceFeedCheck) {
+      return conf.underlying !== undefined && conf.underlying !== null && conf.underlying.length > 0 ? await this.deployCErc20(conf, supportMarket, collateralFactor, reserveFactor, Fuse.CERC20_DELEGATE_CONTRACT_ADDRESS ? Fuse.CERC20_DELEGATE_CONTRACT_ADDRESS : null, options, bypassPriceFeedCheck) : [await this.deployCEther(conf, supportMarket, collateralFactor, reserveFactor, Fuse.CETHER_DELEGATE_CONTRACT_ADDRESS ? Fuse.CETHER_DELEGATE_CONTRACT_ADDRESS : null, options)];
     };
     
-    this.deployCEther = async function(conf, supportMarket, collateralFactor, implementationAddress, options) {
+    this.deployCEther = async function(conf, supportMarket, collateralFactor, reserveFactor, implementationAddress, options) {
       // Deploy CEtherDelegate implementation contract if necessary
       if (!implementationAddress) {
         var cEtherDelegate = new this.web3.eth.Contract(JSON.parse(contracts["contracts/CEtherDelegate.sol:CEtherDelegate"].abi));
@@ -228,12 +231,13 @@ export default class Fuse {
       var comptroller = new this.web3.eth.Contract(JSON.parse(contracts["contracts/Comptroller.sol:Comptroller"].abi), conf.comptroller);
       if (supportMarket) await comptroller.methods._supportMarket(cEtherDelegator.options.address).send(options);
       if (collateralFactor) await comptroller.methods._setCollateralFactor(cEtherDelegator.options.address, collateralFactor).send(options);
+      if (reserveFactor) await cEtherDelegator.methods._setReserveFactor(reserveFactor).send(options);
 
       // Return cToken proxy and implementation contract addresses
       return [cEtherDelegator.options.address, implementationAddress];
     };
     
-    this.deployCErc20 = async function(conf, supportMarket, collateralFactor, implementationAddress, options, bypassPriceFeedCheck) {
+    this.deployCErc20 = async function(conf, supportMarket, collateralFactor, reserveFactor, implementationAddress, options, bypassPriceFeedCheck) {
       // Get Comptroller
       var comptroller = new this.web3.eth.Contract(JSON.parse(contracts["contracts/Comptroller.sol:Comptroller"].abi), conf.comptroller);
 
@@ -342,6 +346,7 @@ export default class Fuse {
       // Register new asset with Comptroller
       if (supportMarket) await comptroller.methods._supportMarket(cErc20Delegator.options.address).send(options);
       if (collateralFactor) await comptroller.methods._setCollateralFactor(cErc20Delegator.options.address, collateralFactor).send(options);
+      if (reserveFactor) await cErc20Delegator.methods._setReserveFactor(reserveFactor).send(options);
 
       // Return cToken proxy and implementation contract addresses
       return [cErc20Delegator.options.address, implementationAddress];
