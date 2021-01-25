@@ -289,7 +289,7 @@ export default class Fuse {
 
           // Check if the token already exists
           try {
-            await uniswapOrUniswapAnchoredView.getTokenConfigByUnderlying(conf.underlying).call();
+            await uniswapOrUniswapAnchoredView.methods.getTokenConfigByUnderlying(conf.underlying).call();
           } catch {
             // If not, add it!
             var underlyingToken = new this.web3.eth.Contract(JSON.parse(contracts["contracts/EIP20Interface.sol:EIP20Interface"].abi), conf.underlying);
