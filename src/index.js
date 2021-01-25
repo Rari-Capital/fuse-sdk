@@ -316,7 +316,7 @@ export default class Fuse {
                   await uniswapOrUniswapAnchoredView.methods.add([{ underlying: conf.underlying, symbolHash: Web3.utils.soliditySha3(underlyingSymbol), baseUnit: Web3.utils.toBN(10).pow(Web3.utils.toBN(underlyingDecimals)).toString(), priceSource: PriceSource.FIXED_ETH, fixedPrice: Web3.utils.toBN(1e18).toString(), uniswapMarket: "0x0000000000000000000000000000000000000000", isUniswapReversed: false }]).send({ ...options });
                 } else {
                   // Check for fixed USD
-                  var fixedUsd = confirm("Should the price of this token be fixed to 1 USD? If so, please note that you will need to run postPrices on your UniswapView for USDC instead of " + underlyingSymbol + " (as technically, the " + underlyingSymbol + " price would be fixed to 1 USDC).");
+                  var fixedUsd = confirm("Should the price of this token be fixed to 1 USD?" + (isUniswapAnchoredView ? "" : "If so, please note that you will need to run postPrices on your UniswapView for USDC instead of " + underlyingSymbol + " (as technically, the " + underlyingSymbol + " price would be fixed to 1 USDC)."));
 
                   if (fixedUsd) {
                     var tokenConfigs = [{ underlying: conf.underlying, symbolHash: Web3.utils.soliditySha3(underlyingSymbol), baseUnit: Web3.utils.toBN(10).pow(Web3.utils.toBN(underlyingDecimals)).toString(), priceSource: PriceSource.FIXED_USD, fixedPrice: Web3.utils.toBN(1e6).toString(), uniswapMarket: "0x0000000000000000000000000000000000000000", isUniswapReversed: false }];
