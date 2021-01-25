@@ -137,16 +137,8 @@ export default class Fuse {
         case "UniswapView":
           if (!conf || conf.anchorPeriod === undefined || conf.anchorPeriod === null) conf.anchorPeriod = 30 * 60;
           var priceOracle = new this.web3.eth.Contract(JSON.parse(openOracleContracts["contracts/Uniswap/UniswapView.sol:UniswapView"].abi));
-          var PriceSource = {
-            FIXED_ETH: 0,
-            FIXED_USD: 1,
-            REPORTER: 2,
-            TWAP: 3
-          };
-          var tokenConfigs = [{ underlying: "0x0000000000000000000000000000000000000000", symbolHash: Web3.utils.soliditySha3("ETH"), baseUnit: Web3.utils.toBN(1e18).toString(), priceSource: PriceSource.TWAP, fixedPrice: 0, uniswapMarket: "0xB4e16d0168e52d35CaCD2c6185b44281Ec28C9Dc", isUniswapReversed: true }];
-          var deployArgs = [conf.anchorPeriod, tokenConfigs, conf.isPublic];
+          var deployArgs = [conf.anchorPeriod, conf.tokenConfigs !== undefined ? conf.tokenConfigs : [], conf.isPublic];
           priceOracle = await priceOracle.deploy({ data: "0x" + openOracleContracts["contracts/Uniswap/UniswapView.sol:UniswapView"].bin, arguments: deployArgs }).send(options);
-          await priceOracle.methods.postPrices([ "0x0000000000000000000000000000000000000000" ]).send({ ...options });
           break;
         default:
           var priceOracle = new this.web3.eth.Contract(JSON.parse(contracts["contracts/" + model + ".sol:" + model].abi));
@@ -315,11 +307,39 @@ export default class Fuse {
               // WETH
               await uniswapOrUniswapAnchoredView.methods.add([{ underlying: conf.underlying, symbolHash: Web3.utils.soliditySha3(underlyingSymbol), baseUnit: Web3.utils.toBN(10).pow(Web3.utils.toBN(underlyingDecimals)).toString(), priceSource: PriceSource.FIXED_ETH, fixedPrice: Web3.utils.toBN(1e18).toString(), uniswapMarket: "0x0000000000000000000000000000000000000000", isUniswapReversed: false }]).send({ ...options });
             } else {
-              var fixedUsd = confirm("Should the price of this token be fixed to 1 USD?");
+              // Ask about fixed prices if UniswapAnchoredView or if UniswapView is not public; otherwise, prompt for Uniswap V2 pair
+              if (isUniswapAnchoredView || !(await uniswapOrUniswapAnchoredView.methods.isPublic().call())) {
+                // Check for fixed ETH
+                var fixedEth = confirm("Should the price of this token be fixed to 1 ETH?");
 
-              if (fixedUsd) {
-                await uniswapOrUniswapAnchoredView.methods.add([{ underlying: conf.underlying, symbolHash: Web3.utils.soliditySha3(underlyingSymbol), baseUnit: Web3.utils.toBN(10).pow(Web3.utils.toBN(underlyingDecimals)).toString(), priceSource: PriceSource.FIXED_USD, fixedPrice: Web3.utils.toBN(1e6).toString(), uniswapMarket: "0x0000000000000000000000000000000000000000", isUniswapReversed: false }]).send({ ...options });
-              } else {
+                if (fixedEth) {
+                  await uniswapOrUniswapAnchoredView.methods.add([{ underlying: conf.underlying, symbolHash: Web3.utils.soliditySha3(underlyingSymbol), baseUnit: Web3.utils.toBN(10).pow(Web3.utils.toBN(underlyingDecimals)).toString(), priceSource: PriceSource.FIXED_ETH, fixedPrice: Web3.utils.toBN(1e18).toString(), uniswapMarket: "0x0000000000000000000000000000000000000000", isUniswapReversed: false }]).send({ ...options });
+                } else {
+                  // Check for fixed USD
+                  var fixedUsd = confirm("Should the price of this token be fixed to 1 USD? Please note that you will need to run postPrices on your UniswapView for USDC as well as the token to be fixed to the price of 1 USD (as technically, the price would be fixed to 1 USDC).");
+
+                  if (fixedUsd) {
+                    var tokenConfigs = [{ underlying: conf.underlying, symbolHash: Web3.utils.soliditySha3(underlyingSymbol), baseUnit: Web3.utils.toBN(10).pow(Web3.utils.toBN(underlyingDecimals)).toString(), priceSource: PriceSource.FIXED_USD, fixedPrice: Web3.utils.toBN(1e6).toString(), uniswapMarket: "0x0000000000000000000000000000000000000000", isUniswapReversed: false }];
+
+                    // UniswapView only: add USDC token config if not present so price oracle can convert from USD to ETH
+                    if (!isUniswapAnchoredView) {
+                      try {
+                        await uniswapOrUniswapAnchoredView.methods.getTokenConfigByUnderlying("0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48").call();
+                      } catch (error) {
+                        tokenConfigs.push({ underlying: "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48", symbolHash: Web3.utils.soliditySha3("USDC"), baseUnit: Web3.utils.toBN(1e6).toString(), priceSource: PriceSource.TWAP, fixedPrice: 0, uniswapMarket: "0xb4e16d0168e52d35cacd2c6185b44281ec28c9dc", isUniswapReversed: false });
+                      }
+                    }
+
+                    // Add token config(s)
+                    await uniswapOrUniswapAnchoredView.methods.add(tokenConfigs).send({ ...options });
+
+                    // UniswapView only: post USDC price
+                    if (!isUniswapAnchoredView) await uniswapOrUniswapAnchoredView.methods.postPrices(["0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"]).send({ ...options });
+                  } else await promptForUniswapV2Pair(); // Prompt for Uniswap V2 pair
+                }
+              } else await promptForUniswapV2Pair(); // Prompt for Uniswap V2 pair
+
+              async function promptForUniswapV2Pair() {
                 var uniswapV2Pair = prompt("Please enter the underlying token's ETH-based Uniswap V2 pair address:");
         
                 if (uniswapV2Pair.length > 0) {
