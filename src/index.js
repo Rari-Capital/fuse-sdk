@@ -104,10 +104,10 @@ export default class Fuse {
       switch (model) {
         case "PreferredPriceOracle":
           // Deploy ChainlinkPriceOracle
-          if (!conf.chainlinkPriceOracle) conf.chainlinkPriceOracle = this.deployPriceOracle("ChainlinkPriceOracle", {}, options);
+          if (!conf.chainlinkPriceOracle) conf.chainlinkPriceOracle = await this.deployPriceOracle("ChainlinkPriceOracle", {}, options);
           
           // Deploy Uniswap price oracle
-          if (!conf.uniswapPriceOracle) conf.uniswapPriceOracle = this.deployPriceOracle("UniswapView", { isPublic: conf.isPublic }, options);
+          if (!conf.uniswapPriceOracle) conf.uniswapPriceOracle = await this.deployPriceOracle("UniswapView", { isPublic: conf.isPublic }, options);
 
           // Deploy PreferredPriceOracle
           var priceOracle = new this.web3.eth.Contract(JSON.parse(contracts["contracts/PreferredPriceOracle.sol:PreferredPriceOracle"].abi));
@@ -245,7 +245,7 @@ export default class Fuse {
 
           try {
             var chainlinkPriceOracle = await preferredPriceOracle.methods.chainlinkOracle().call();
-            chainlinkPriceOracle = new this.web3.eth.Contract(JSON.parse(openOracleContracts["contracts/Uniswap/UniswapAnchoredView.sol:UniswapAnchoredView"].abi), chainlinkPriceOracle);
+            chainlinkPriceOracle = new this.web3.eth.Contract(JSON.parse(contracts["contracts/ChainlinkPriceOracle.sol:ChainlinkPriceOracle"].abi), chainlinkPriceOracle);
             var chainlinkPriceFeed = await chainlinkPriceOracle.methods.priceFeeds(conf.underlying).call();
           } catch { }
         }
