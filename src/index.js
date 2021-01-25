@@ -35,7 +35,7 @@ export default class Fuse {
       // Deploy new price oracle via SDK if requested
       if (["SimplePriceOracle", "PreferredPriceOracle", "ChainlinkPriceOracle", "UniswapAnchoredView", "UniswapView"].indexOf(priceOracle) >= 0) {
         try {
-          priceOracle = await this.deployPriceOracle(priceOracle, { maxTokens: maxAssets }, options); // TODO: anchorMantissa / anchorPeriod
+          priceOracle = await this.deployPriceOracle(priceOracle, { isPublic: false }, options); // TODO: anchorMantissa / anchorPeriod
         } catch (error) {
           throw "Deployment of price oracle failed: " + (error.message ? error.message : error);
         }
@@ -75,7 +75,7 @@ export default class Fuse {
       // Deploy new price oracle via SDK if requested
       if (["SimplePriceOracle", "PreferredPriceOracle", "ChainlinkPriceOracle", "UniswapAnchoredView", "UniswapView"].indexOf(priceOracle) >= 0) {
         try {
-          priceOracle = await this.deployPriceOracle(priceOracle, { maxTokens: maxAssets }, options); // TODO: anchorMantissa / anchorPeriod
+          priceOracle = await this.deployPriceOracle(priceOracle, { isPublic: false }, options); // TODO: anchorMantissa / anchorPeriod
         } catch (error) {
           throw "Deployment of price oracle failed: " + (error.message ? error.message : error);
         }
@@ -103,32 +103,25 @@ export default class Fuse {
 
       switch (model) {
         case "PreferredPriceOracle":
-          var chainlinkPriceOracle = conf.chainlinkPriceOracle;
-
-          if (!chainlinkPriceOracle) {
-            var chainlinkPriceOracle = new this.web3.eth.Contract(JSON.parse(contracts["contracts/ChainlinkPriceOracle.sol:ChainlinkPriceOracle"].abi));
-            chainlinkPriceOracle = await chainlinkPriceOracle.deploy({ data: "0x" + contracts["contracts/ChainlinkPriceOracle.sol:ChainlinkPriceOracle"].bin }).send(options);
-            chainlinkPriceOracle = chainlinkPriceOracle.options.address;
-          }
+          // Deploy ChainlinkPriceOracle
+          if (!conf.chainlinkPriceOracle) conf.chainlinkPriceOracle = this.deployPriceOracle("ChainlinkPriceOracle", {}, options);
           
-          if (!uniswapPriceOracle) {
-            var uniswapPriceOracle = new this.web3.eth.Contract(JSON.parse(openOracleContracts["contracts/Uniswap/UniswapView.sol:UniswapView"].abi));
-            uniswapPriceOracle = await uniswapPriceOracle.deploy({ data: "0x" + openOracleContracts["contracts/Uniswap/UniswapView.sol:UniswapView"].bin }).send(options);
-            uniswapPriceOracle = uniswapPriceOracle.options.address;
-          }
+          // Deploy Uniswap price oracle
+          if (!conf.uniswapPriceOracle) conf.uniswapPriceOracle = this.deployPriceOracle("UniswapView", { isPublic: conf.isPublic }, options);
 
-          var priceOracle = new this.web3.eth.Contract(JSON.parse(contracts["contracts/" + model + ".sol:" + model].abi));
-          priceOracle = await priceOracle.deploy({ data: "0x" + contracts["contracts/" + model + ".sol:" + model].bin, arguments: [chainlinkPriceOracle, uniswapPriceOracle] }).send(options);
+          // Deploy PreferredPriceOracle
+          var priceOracle = new this.web3.eth.Contract(JSON.parse(contracts["contracts/PreferredPriceOracle.sol:PreferredPriceOracle"].abi));
+          priceOracle = await priceOracle.deploy({ data: "0x" + contracts["contracts/PreferredPriceOracle.sol:PreferredPriceOracle"].bin, arguments: [conf.chainlinkPriceOracle, conf.uniswapPriceOracle] }).send(options);
 
           break;
         case "ChainlinkPriceOracle":
-          var priceOracle = new this.web3.eth.Contract(JSON.parse(contracts["contracts/" + model + ".sol:" + model].abi));
-          priceOracle = await priceOracle.deploy({ data: "0x" + contracts["contracts/" + model + ".sol:" + model].bin }).send(options);
+          var priceOracle = new this.web3.eth.Contract(JSON.parse(contracts["contracts/ChainlinkPriceOracle.sol:ChainlinkPriceOracle"].abi));
+          priceOracle = await priceOracle.deploy({ data: "0x" + contracts["contracts/ChainlinkPriceOracle.sol:ChainlinkPriceOracle"].bin }).send(options);
           break;
         case "UniswapAnchoredView":
           const reporter = "0xfCEAdAFab14d46e20144F48824d0C09B1a03F2BC";
           if (!conf || conf.anchorMantissa === undefined || conf.anchorMantissa === null) conf.anchorMantissa = Web3.utils.toBN(1e17); // 1e17 equates to 10% tolerance for source price to be above or below anchor
-          if (!conf || conf.anchorMantissa === undefined || conf.anchorMantissa === null) conf.anchorPeriod = 30 * 60;
+          if (!conf || conf.anchorPeriod === undefined || conf.anchorPeriod === null) conf.anchorPeriod = 30 * 60;
           var priceOracle = new this.web3.eth.Contract(JSON.parse(openOracleContracts["contracts/Uniswap/UniswapAnchoredView.sol:UniswapAnchoredView"].abi));
           var PriceSource = {
             FIXED_ETH: 0,
@@ -137,11 +130,12 @@ export default class Fuse {
             TWAP: 3
           };
           var tokenConfigs = [{ underlying: "0x0000000000000000000000000000000000000000", symbolHash: Web3.utils.soliditySha3("ETH"), baseUnit: Web3.utils.toBN(1e18).toString(), priceSource: PriceSource.REPORTER, fixedPrice: 0, uniswapMarket: "0xB4e16d0168e52d35CaCD2c6185b44281Ec28C9Dc", isUniswapReversed: true }];
-          var deployArgs = [Fuse.OPEN_ORACLE_PRICE_DATA_CONTRACT_ADDRESS, reporter, conf.anchorMantissa, conf.anchorPeriod, tokenConfigs, conf.maxTokens];
+          var deployArgs = [Fuse.OPEN_ORACLE_PRICE_DATA_CONTRACT_ADDRESS, reporter, conf.anchorMantissa, conf.anchorPeriod, tokenConfigs];
           priceOracle = await priceOracle.deploy({ data: "0x" + openOracleContracts["contracts/Uniswap/UniswapAnchoredView.sol:UniswapAnchoredView"].bin, arguments: deployArgs }).send(options);
+          // TODO: Report first ETH/USD price to UniswapAnchoredView
           break;
         case "UniswapView":
-          if (!conf || conf.anchorMantissa === undefined || conf.anchorMantissa === null) conf.anchorPeriod = 30 * 60;
+          if (!conf || conf.anchorPeriod === undefined || conf.anchorPeriod === null) conf.anchorPeriod = 30 * 60;
           var priceOracle = new this.web3.eth.Contract(JSON.parse(openOracleContracts["contracts/Uniswap/UniswapView.sol:UniswapView"].abi));
           var PriceSource = {
             FIXED_ETH: 0,
@@ -150,8 +144,9 @@ export default class Fuse {
             TWAP: 3
           };
           var tokenConfigs = [{ underlying: "0x0000000000000000000000000000000000000000", symbolHash: Web3.utils.soliditySha3("ETH"), baseUnit: Web3.utils.toBN(1e18).toString(), priceSource: PriceSource.TWAP, fixedPrice: 0, uniswapMarket: "0xB4e16d0168e52d35CaCD2c6185b44281Ec28C9Dc", isUniswapReversed: true }];
-          var deployArgs = [conf.anchorPeriod, tokenConfigs, conf.maxTokens];
+          var deployArgs = [conf.anchorPeriod, tokenConfigs, conf.isPublic];
           priceOracle = await priceOracle.deploy({ data: "0x" + openOracleContracts["contracts/Uniswap/UniswapView.sol:UniswapView"].bin, arguments: deployArgs }).send(options);
+          await priceOracle.methods.postPrices([ "0x0000000000000000000000000000000000000000" ]).send({ ...options });
           break;
         default:
           var priceOracle = new this.web3.eth.Contract(JSON.parse(contracts["contracts/" + model + ".sol:" + model].abi));
@@ -316,16 +311,23 @@ export default class Fuse {
               TWAP: 3
             };
 
-            var fixedUsd = confirm("Should the price of this token be fixed to 1 USD?");
-
-            if (fixedUsd) {
-              await uniswapOrUniswapAnchoredView.methods.add([{ underlying: conf.underlying, symbolHash: Web3.utils.soliditySha3(underlyingSymbol), baseUnit: Web3.utils.toBN(10).pow(Web3.utils.toBN(underlyingDecimals)).toString(), priceSource: PriceSource.FIXED_USD, fixedPrice: Web3.utils.toBN(1e6).toString(), uniswapMarket: "0x0000000000000000000000000000000000000000", isUniswapReversed: false }]).send(options);
+            if (conf.underlying == "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2") {
+              // WETH
+              await uniswapOrUniswapAnchoredView.methods.add([{ underlying: conf.underlying, symbolHash: Web3.utils.soliditySha3(underlyingSymbol), baseUnit: Web3.utils.toBN(10).pow(Web3.utils.toBN(underlyingDecimals)).toString(), priceSource: PriceSource.FIXED_ETH, fixedPrice: Web3.utils.toBN(1e18).toString(), uniswapMarket: "0x0000000000000000000000000000000000000000", isUniswapReversed: false }]).send({ ...options });
             } else {
-              var uniswapV2Pair = prompt("Please enter the underlying token's ETH-based Uniswap V2 pair address (if available):");
-      
-              if (uniswapV2Pair.length > 0) {
-                var isNotReversed = confirm("Press OK if the Uniswap V2 pair is " + underlyingSymbol + "/ETH? If it is reversed (ETH/" + underlyingSymbol + "), press Cancel.");
-                await uniswapOrUniswapAnchoredView.methods.add([{ underlying: conf.underlying, symbolHash: Web3.utils.soliditySha3(underlyingSymbol), baseUnit: Web3.utils.toBN(10).pow(Web3.utils.toBN(underlyingDecimals)).toString(), priceSource: isUniswapAnchoredView ? PriceSource.REPORTER : PriceSource.TWAP, fixedPrice: 0, uniswapMarket: uniswapV2Pair, isUniswapReversed: !isNotReversed }]).send(options);
+              var fixedUsd = confirm("Should the price of this token be fixed to 1 USD?");
+
+              if (fixedUsd) {
+                await uniswapOrUniswapAnchoredView.methods.add([{ underlying: conf.underlying, symbolHash: Web3.utils.soliditySha3(underlyingSymbol), baseUnit: Web3.utils.toBN(10).pow(Web3.utils.toBN(underlyingDecimals)).toString(), priceSource: PriceSource.FIXED_USD, fixedPrice: Web3.utils.toBN(1e6).toString(), uniswapMarket: "0x0000000000000000000000000000000000000000", isUniswapReversed: false }]).send({ ...options });
+              } else {
+                var uniswapV2Pair = prompt("Please enter the underlying token's ETH-based Uniswap V2 pair address:");
+        
+                if (uniswapV2Pair.length > 0) {
+                  var isNotReversed = confirm("Press OK if the Uniswap V2 pair is " + underlyingSymbol + "/ETH? If it is reversed (ETH/" + underlyingSymbol + "), press Cancel.");
+                  await uniswapOrUniswapAnchoredView.methods.add([{ underlying: conf.underlying, symbolHash: Web3.utils.soliditySha3(underlyingSymbol), baseUnit: Web3.utils.toBN(10).pow(Web3.utils.toBN(underlyingDecimals)).toString(), priceSource: isUniswapAnchoredView ? PriceSource.REPORTER : PriceSource.TWAP, fixedPrice: 0, uniswapMarket: uniswapV2Pair, isUniswapReversed: !isNotReversed }]).send({ ...options });
+                  if (!isUniswapAnchoredView) await uniswapOrUniswapAnchoredView.methods.postPrices([ conf.underlying ]).send({ ...options });
+                  // TODO: Post first price to UniswapAnchoredView
+                } else throw isUniswapAnchoredView ? "Reported prices must have a Uniswap V2 pair as an anchor!" : "Non-fixed prices must have a Uniswap V2 pair from which to source prices!";
               }
             }
           }
