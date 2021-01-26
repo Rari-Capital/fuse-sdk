@@ -8,15 +8,47 @@ var contracts = require(__dirname + "/contracts/compound-protocol.json").contrac
 var openOracleContracts = require(__dirname + "/contracts/open-oracle.json").contracts;
 
 
-const Fuse = (provider: Provider | string = 'mainnet', options: FuseOptions = {}) => {
-  
-  constructor(web3Provider) {
-    this.web3 = new Web3(web3Provider);
+class Fuse {
+  static FUSE_POOL_DIRECTORY_CONTRACT_ADDRESS = "0xDc64a140Aa3E981100a9becA4E685f962f0cF6C9";
+  static FUSE_SAFE_LIQUIDATOR_CONTRACT_ADDRESS = "0x0165878A594ca255338adfa4d48449f69242Eb8F";
+  static OPEN_ORACLE_PRICE_DATA_CONTRACT_ADDRESS = "0xc629c26dced4277419cde234012f8160a0278a79";
+  static COINBASE_PRO_REPORTER_ADDRESS = "0xfCEAdAFab14d46e20144F48824d0C09B1a03F2BC";
+
+  // TODO: Add Deployment Addresses
+  static COMPTROLLER_IMPLEMENTATION_CONTRACT_ADDRESS = "0x0";
+  static CERC20_DELEGATE_CONTRACT_ADDRESS = "0x0";
+  static CETHER_DELEGATE_CONTRACT_ADDRESS = "0x0";
+  static PUBLIC_PREFERRED_PRICE_ORACLE_CONTRACT_ADDRESS = "0x0";
+  static PUBLIC_CHAINLINK_PRICE_ORACLE_CONTRACT_ADDRESS = "0x0";
+  static PUBLIC_UNISWAP_VIEW_CONTRACT_ADDRESS = "0x0";
+
+  // * @dev static Web3 declarations
+  static Web3 = Web3;
+  // @ts-ignore
+  static BN = Web3.utils.BN;
+
+  // * @dev Type declarations
+  web3: Web3;
+  contracts: any;
+  getCreate2Address: (creatorAddress: any, salt: any, byteCode: any) => string;
+  deployPool: (poolName: any, isPrivate: any, closeFactor: any, maxAssets: any, liquidationIncentive: any, priceOracle: any, priceOracleConf: any, options: any) => Promise<any[]>;
+  _deployPool: (poolName: any, isPrivate: any, closeFactor: any, maxAssets: any, liquidationIncentive: any, priceOracle: any, priceOracleConf: any, options: any) => Promise<any[]>;
+  deployPriceOracle: (model: any, conf: any, options: any) => Promise<any>;
+  deployComptroller: (closeFactor: any, maxAssets: any, liquidationIncentive: any, priceOracle: any, implementationAddress: any, options: any) => Promise<any[]>;
+  deployAsset: (conf: any, collateralFactor: any, reserveFactor: any, adminFee: any, options: any, bypassPriceFeedCheck: any) => Promise<any[]>;
+  deployInterestRateModel: (model: any, options: any) => Promise<any>;
+  deployCToken: (conf: any, supportMarket: any, collateralFactor: any, reserveFactor: any, adminFee: any, options: any, bypassPriceFeedCheck: any) => Promise<any>;
+  deployCEther: (conf: any, supportMarket: any, collateralFactor: any, reserveFactor: any, adminFee: any, implementationAddress: any, options: any) => Promise<any[]>;
+  deployCErc20: (conf: any, supportMarket: any, collateralFactor: any, reserveFactor: any, adminFee: any, implementationAddress: any, options: any, bypassPriceFeedCheck: any) => Promise<any[]>;
+
+
+  constructor(provider: any, options: FuseOptions = {}) {
+    this.web3 = new Web3(provider);
     this.contracts = {
       FusePoolDirectory: new this.web3.eth.Contract(fusePoolDirectoryAbi, Fuse.FUSE_POOL_DIRECTORY_CONTRACT_ADDRESS),
       FuseSafeLiquidator: new this.web3.eth.Contract(fuseSafeLiquidatorAbi, Fuse.FUSE_SAFE_LIQUIDATOR_CONTRACT_ADDRESS)
     };
-    
+
     this.getCreate2Address = function(creatorAddress, salt, byteCode) {
       return `0x${this.web3.utils.sha3(`0x${[
         'ff',
@@ -26,7 +58,7 @@ const Fuse = (provider: Provider | string = 'mainnet', options: FuseOptions = {}
       ].map(x => x.replace(/0x/, ''))
       .join('')}`).slice(-40)}`.toLowerCase()
     }
-    
+
     this.deployPool = async function(poolName, isPrivate, closeFactor, maxAssets, liquidationIncentive, priceOracle, priceOracleConf, options) {
       // Deploy new price oracle via SDK if requested
       if (["SimplePriceOracle", "PreferredPriceOracle", "ChainlinkPriceOracle", "UniswapAnchoredView", "UniswapView"].indexOf(priceOracle) >= 0) {
@@ -36,37 +68,37 @@ const Fuse = (provider: Provider | string = 'mainnet', options: FuseOptions = {}
           throw "Deployment of price oracle failed: " + (error.message ? error.message : error);
         }
       }
-      
+
       // Deploy Comptroller implementation if necessary
       var implementationAddress = Fuse.COMPTROLLER_IMPLEMENTATION_CONTRACT_ADDRESS;
-      
+
       if (!implementationAddress) {
         var comptroller = new this.web3.eth.Contract(JSON.parse(contracts["contracts/Comptroller.sol:Comptroller"].abi));
         comptroller = await comptroller.deploy({ data: "0x" + contracts["contracts/Comptroller.sol:Comptroller"].bin }).send(options);
         implementationAddress = comptroller.options.address;
       }
-      
+
       // Register new pool with FusePoolDirectory
       try {
         var receipt = await this.contracts.FusePoolDirectory.methods.deployPool(poolName, implementationAddress, isPrivate, closeFactor, maxAssets, liquidationIncentive, priceOracle).send(options);
       } catch (error) {
         throw "Deployment and registration of new Fuse pool failed: " + (error.message ? error.message : error);
       }
-      
+
       // Compute Unitroller address
       var poolAddress = this.getCreate2Address(Fuse.FUSE_POOL_DIRECTORY_CONTRACT_ADDRESS, poolName, "0x" + contracts["contracts/Unitroller.sol:Unitroller"].bin)
       var unitroller = new this.web3.eth.Contract(JSON.parse(contracts["contracts/Unitroller.sol:Unitroller"].abi), poolAddress);
-      
+
       // Accept admin status via Unitroller
       try {
         await unitroller.methods._acceptAdmin().send(options);
       } catch (error) {
         throw "Accepting admin status failed: " + (error.message ? error.message : error);
       }
-      
+
       return [poolAddress, implementationAddress, priceOracle];
     }
-    
+
     this._deployPool = async function(poolName, isPrivate, closeFactor, maxAssets, liquidationIncentive, priceOracle, priceOracleConf, options) {
       // Deploy new price oracle via SDK if requested
       if (["SimplePriceOracle", "PreferredPriceOracle", "ChainlinkPriceOracle", "UniswapAnchoredView", "UniswapView"].indexOf(priceOracle) >= 0) {
@@ -76,32 +108,30 @@ const Fuse = (provider: Provider | string = 'mainnet', options: FuseOptions = {}
           throw "Deployment of price oracle failed: " + (error.message ? error.message : error);
         }
       }
-      
+
       // Deploy new pool via SDK
       try {
         var [poolAddress, implementationAddress] = await this.deployComptroller(closeFactor, maxAssets, liquidationIncentive, priceOracle, null, options);
       } catch (error) {
         throw "Deployment of Comptroller failed: " + (error.message ? error.message : error);
       }
-      
+
       // Register new pool with FusePoolDirectory
       try {
         await this.contracts.FusePoolDirectory.methods.registerPool(poolName, poolAddress, isPrivate).send(options);
       } catch (error) {
         throw "Registration of new Fuse pool failed: " + (error.message ? error.message : error);
       }
-      
       return [poolAddress, implementationAddress, priceOracle];
     }
-    
+
     this.deployPriceOracle = async function(model, conf, options) {
       if (!model) model = "PreferredPriceOracle";
-      
       switch (model) {
         case "PreferredPriceOracle":
           // Deploy ChainlinkPriceOracle
           if (!conf.chainlinkPriceOracle) conf.chainlinkPriceOracle = await this.deployPriceOracle("ChainlinkPriceOracle", {}, options);
-          
+
           // Deploy Uniswap price oracle
           if (!conf.uniswapPriceOracle) conf.uniswapPriceOracle = await this.deployPriceOracle("UniswapView", { isPublic: conf.isPublic }, options);
 
@@ -136,7 +166,7 @@ const Fuse = (provider: Provider | string = 'mainnet', options: FuseOptions = {}
           var priceData = new this.web3.eth.Contract(JSON.parse(openOracleContracts["contracts/OpenOraclePriceData.sol:OpenOraclePriceData"].abi), Fuse.OPEN_ORACLE_PRICE_DATA_CONTRACT_ADDRESS);
           if (Web3.utils.toBN(await priceData.methods.getPrice(conf.reporter, "ETH").call()).gt(Web3.utils.toBN(0))) await priceOracle.methods.postPrices([], [], ["ETH"]).send({ ...options });
           else prompt("It looks like prices have never been reported for ETH. ETH prices are necessary to convert posted USD prices into outputted ETH prices. Please click OK once you have reported and posted prices for ETH.");
-          
+
           break;
         case "UniswapView":
           if (!conf || conf.anchorPeriod === undefined || conf.anchorPeriod === null) conf.anchorPeriod = 30 * 60;
@@ -149,7 +179,7 @@ const Fuse = (provider: Provider | string = 'mainnet', options: FuseOptions = {}
           priceOracle = await priceOracle.deploy({ data: "0x" + contracts["contracts/" + model + ".sol:" + model].bin }).send(options);
           break;
       }
-      
+
       return priceOracle.options.address;
     };
 
@@ -200,11 +230,11 @@ const Fuse = (provider: Provider | string = 'mainnet', options: FuseOptions = {}
       interestRateModel = await interestRateModel.deploy({ data: "0x" + contracts["contracts/" + model + ".sol:" + model].bin }).send(options);
       return interestRateModel.options.address;
     };
-    
+
     this.deployCToken = async function(conf, supportMarket, collateralFactor, reserveFactor, adminFee, options, bypassPriceFeedCheck) {
       return conf.underlying !== undefined && conf.underlying !== null && conf.underlying.length > 0 ? await this.deployCErc20(conf, supportMarket, collateralFactor, reserveFactor, adminFee, Fuse.CERC20_DELEGATE_CONTRACT_ADDRESS ? Fuse.CERC20_DELEGATE_CONTRACT_ADDRESS : null, options, bypassPriceFeedCheck) : [await this.deployCEther(conf, supportMarket, collateralFactor, reserveFactor, adminFee, Fuse.CETHER_DELEGATE_CONTRACT_ADDRESS ? Fuse.CETHER_DELEGATE_CONTRACT_ADDRESS : null, options)];
     };
-    
+
     this.deployCEther = async function(conf, supportMarket, collateralFactor, reserveFactor, adminFee, implementationAddress, options) {
       // Deploy CEtherDelegate implementation contract if necessary
       if (!implementationAddress) {
@@ -228,7 +258,7 @@ const Fuse = (provider: Provider | string = 'mainnet', options: FuseOptions = {}
       // Return cToken proxy and implementation contract addresses
       return [cEtherDelegator.options.address, implementationAddress];
     };
-    
+
     this.deployCErc20 = async function(conf, supportMarket, collateralFactor, reserveFactor, adminFee, implementationAddress, options, bypassPriceFeedCheck) {
       // Get Comptroller
       var comptroller = new this.web3.eth.Contract(JSON.parse(contracts["contracts/Comptroller.sol:Comptroller"].abi), conf.comptroller);
@@ -253,7 +283,7 @@ const Fuse = (provider: Provider | string = 'mainnet', options: FuseOptions = {}
             var chainlinkPriceFeed = await chainlinkPriceOracle.methods.priceFeeds(conf.underlying).call();
           } catch { }
         }
-        
+
         if (chainlinkPriceFeed === undefined || Web3.utils.toBN(chainlinkPriceFeed).isZero()) {
           // Check if we can get a UniswapAnchoredView
           var isUniswapAnchoredView = false;
@@ -340,7 +370,7 @@ const Fuse = (provider: Provider | string = 'mainnet', options: FuseOptions = {}
                       try {
                         await uniswapOrUniswapAnchoredView.methods.getTokenConfigByUnderlying("0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48").call();
                       } catch (error) {
-                        tokenConfigs.push({ underlying: "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48", symbolHash: Web3.utils.soliditySha3("USDC"), baseUnit: Web3.utils.toBN(1e6).toString(), priceSource: PriceSource.TWAP, fixedPrice: 0, uniswapMarket: "0xb4e16d0168e52d35cacd2c6185b44281ec28c9dc", isUniswapReversed: false });
+                        tokenConfigs.push({ underlying: "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48", symbolHash: Web3.utils.soliditySha3("USDC"), baseUnit: Web3.utils.toBN(1e6).toString(), priceSource: PriceSource.TWAP, fixedPrice: '0', uniswapMarket: "0xb4e16d0168e52d35cacd2c6185b44281ec28c9dc", isUniswapReversed: false });
                       }
                     }
 
@@ -355,7 +385,7 @@ const Fuse = (provider: Provider | string = 'mainnet', options: FuseOptions = {}
 
               async function promptForUniswapV2Pair(web3) {
                 var uniswapV2Pair = prompt("Please enter the underlying token's ETH-based Uniswap V2 pair address:");
-        
+
                 if (uniswapV2Pair.length > 0) {
                   var isNotReversed = confirm("Press OK if the Uniswap V2 pair is " + underlyingSymbol + "/ETH? If it is reversed (ETH/" + underlyingSymbol + "), press Cancel.");
                   await uniswapOrUniswapAnchoredView.methods.add([{ underlying: conf.underlying, symbolHash: Web3.utils.soliditySha3(underlyingSymbol), baseUnit: Web3.utils.toBN(10).pow(Web3.utils.toBN(underlyingDecimals)).toString(), priceSource: isUniswapAnchoredView ? PriceSource.REPORTER : PriceSource.TWAP, fixedPrice: 0, uniswapMarket: uniswapV2Pair, isUniswapReversed: !isNotReversed }]).send({ ...options });
@@ -399,23 +429,7 @@ const Fuse = (provider: Provider | string = 'mainnet', options: FuseOptions = {}
       return [cErc20Delegator.options.address, implementationAddress];
     };
   }
-
-  static Web3 = Web3;
-  static BN = Web3.utils.BN;
 }
-
-Fuse.FUSE_POOL_DIRECTORY_CONTRACT_ADDRESS = "0xDc64a140Aa3E981100a9becA4E685f962f0cF6C9";
-Fuse.FUSE_SAFE_LIQUIDATOR_CONTRACT_ADDRESS = "0x0165878A594ca255338adfa4d48449f69242Eb8F";
-Fuse.OPEN_ORACLE_PRICE_DATA_CONTRACT_ADDRESS = "0xc629c26dced4277419cde234012f8160a0278a79";
-Fuse.COINBASE_PRO_REPORTER_ADDRESS = "0xfCEAdAFab14d46e20144F48824d0C09B1a03F2BC";
-
-// TODO: Add Deployment Addresses
-Fuse.COMPTROLLER_IMPLEMENTATION_CONTRACT_ADDRESS = "0x0";
-Fuse.CERC20_DELEGATE_CONTRACT_ADDRESS = "0x0";
-Fuse.CETHER_DELEGATE_CONTRACT_ADDRESS = "0x0";
-Fuse.PUBLIC_PREFERRED_PRICE_ORACLE_CONTRACT_ADDRESS = "0x0";
-Fuse.PUBLIC_CHAINLINK_PRICE_ORACLE_CONTRACT_ADDRESS = "0x0";
-Fuse.PUBLIC_UNISWAP_VIEW_CONTRACT_ADDRESS = "0x0";
 
 
 export default Fuse;
