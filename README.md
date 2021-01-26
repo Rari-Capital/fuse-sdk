@@ -26,6 +26,12 @@ Include the prebuilt `dist/fuse.window.js` in your HTML to expose the `Fuse` cla
 <script src="dist/fuse.window.js">
 ```
 
+Import the `fuse-sdk` package:
+
+```
+import Fuse from "@Rari-Capital/fuse-sdk";
+```
+
 ## Instantiation
 
 The `Fuse` class is instantiated with a Web3 provider as the sole constructor parameter.

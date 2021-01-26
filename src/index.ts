@@ -1,30 +1,22 @@
 /* eslint-disable */
 import Web3 from "web3";
+import { Provider, FuseOptions } from './types';
 
 var fusePoolDirectoryAbi = require(__dirname + "/abi/FusePoolDirectory.json");
 var fuseSafeLiquidatorAbi = require(__dirname + "/abi/FuseSafeLiquidator.json");
 var contracts = require(__dirname + "/contracts/compound-protocol.json").contracts;
 var openOracleContracts = require(__dirname + "/contracts/open-oracle.json").contracts;
 
-export default class Fuse {
-  static FUSE_POOL_DIRECTORY_CONTRACT_ADDRESS = "0xDc64a140Aa3E981100a9becA4E685f962f0cF6C9";
-  static FUSE_SAFE_LIQUIDATOR_CONTRACT_ADDRESS = "0x0165878A594ca255338adfa4d48449f69242Eb8F";
-  static COMPTROLLER_IMPLEMENTATION_CONTRACT_ADDRESS;
-  static CERC20_DELEGATE_CONTRACT_ADDRESS;
-  static CETHER_DELEGATE_CONTRACT_ADDRESS;
-  static OPEN_ORACLE_PRICE_DATA_CONTRACT_ADDRESS = "0xc629c26dced4277419cde234012f8160a0278a79";
-  static COINBASE_PRO_REPORTER_ADDRESS = "0xfCEAdAFab14d46e20144F48824d0C09B1a03F2BC";
-  static PUBLIC_PREFERRED_PRICE_ORACLE_CONTRACT_ADDRESS;
-  static PUBLIC_CHAINLINK_PRICE_ORACLE_CONTRACT_ADDRESS;
-  static PUBLIC_UNISWAP_VIEW_CONTRACT_ADDRESS;
 
+const Fuse = (provider: Provider | string = 'mainnet', options: FuseOptions = {}) => {
+  
   constructor(web3Provider) {
     this.web3 = new Web3(web3Provider);
     this.contracts = {
       FusePoolDirectory: new this.web3.eth.Contract(fusePoolDirectoryAbi, Fuse.FUSE_POOL_DIRECTORY_CONTRACT_ADDRESS),
       FuseSafeLiquidator: new this.web3.eth.Contract(fuseSafeLiquidatorAbi, Fuse.FUSE_SAFE_LIQUIDATOR_CONTRACT_ADDRESS)
     };
-
+    
     this.getCreate2Address = function(creatorAddress, salt, byteCode) {
       return `0x${this.web3.utils.sha3(`0x${[
         'ff',
@@ -34,7 +26,7 @@ export default class Fuse {
       ].map(x => x.replace(/0x/, ''))
       .join('')}`).slice(-40)}`.toLowerCase()
     }
-
+    
     this.deployPool = async function(poolName, isPrivate, closeFactor, maxAssets, liquidationIncentive, priceOracle, priceOracleConf, options) {
       // Deploy new price oracle via SDK if requested
       if (["SimplePriceOracle", "PreferredPriceOracle", "ChainlinkPriceOracle", "UniswapAnchoredView", "UniswapView"].indexOf(priceOracle) >= 0) {
@@ -47,34 +39,34 @@ export default class Fuse {
       
       // Deploy Comptroller implementation if necessary
       var implementationAddress = Fuse.COMPTROLLER_IMPLEMENTATION_CONTRACT_ADDRESS;
-
+      
       if (!implementationAddress) {
         var comptroller = new this.web3.eth.Contract(JSON.parse(contracts["contracts/Comptroller.sol:Comptroller"].abi));
         comptroller = await comptroller.deploy({ data: "0x" + contracts["contracts/Comptroller.sol:Comptroller"].bin }).send(options);
         implementationAddress = comptroller.options.address;
       }
-
+      
       // Register new pool with FusePoolDirectory
       try {
         var receipt = await this.contracts.FusePoolDirectory.methods.deployPool(poolName, implementationAddress, isPrivate, closeFactor, maxAssets, liquidationIncentive, priceOracle).send(options);
       } catch (error) {
         throw "Deployment and registration of new Fuse pool failed: " + (error.message ? error.message : error);
       }
-
+      
       // Compute Unitroller address
       var poolAddress = this.getCreate2Address(Fuse.FUSE_POOL_DIRECTORY_CONTRACT_ADDRESS, poolName, "0x" + contracts["contracts/Unitroller.sol:Unitroller"].bin)
       var unitroller = new this.web3.eth.Contract(JSON.parse(contracts["contracts/Unitroller.sol:Unitroller"].abi), poolAddress);
-
+      
       // Accept admin status via Unitroller
       try {
         await unitroller.methods._acceptAdmin().send(options);
       } catch (error) {
         throw "Accepting admin status failed: " + (error.message ? error.message : error);
       }
-
+      
       return [poolAddress, implementationAddress, priceOracle];
     }
-
+    
     this._deployPool = async function(poolName, isPrivate, closeFactor, maxAssets, liquidationIncentive, priceOracle, priceOracleConf, options) {
       // Deploy new price oracle via SDK if requested
       if (["SimplePriceOracle", "PreferredPriceOracle", "ChainlinkPriceOracle", "UniswapAnchoredView", "UniswapView"].indexOf(priceOracle) >= 0) {
@@ -84,27 +76,27 @@ export default class Fuse {
           throw "Deployment of price oracle failed: " + (error.message ? error.message : error);
         }
       }
-
+      
       // Deploy new pool via SDK
       try {
         var [poolAddress, implementationAddress] = await this.deployComptroller(closeFactor, maxAssets, liquidationIncentive, priceOracle, null, options);
       } catch (error) {
         throw "Deployment of Comptroller failed: " + (error.message ? error.message : error);
       }
-
+      
       // Register new pool with FusePoolDirectory
       try {
         await this.contracts.FusePoolDirectory.methods.registerPool(poolName, poolAddress, isPrivate).send(options);
       } catch (error) {
         throw "Registration of new Fuse pool failed: " + (error.message ? error.message : error);
       }
-
+      
       return [poolAddress, implementationAddress, priceOracle];
     }
-
+    
     this.deployPriceOracle = async function(model, conf, options) {
       if (!model) model = "PreferredPriceOracle";
-
+      
       switch (model) {
         case "PreferredPriceOracle":
           // Deploy ChainlinkPriceOracle
@@ -411,3 +403,19 @@ export default class Fuse {
   static Web3 = Web3;
   static BN = Web3.utils.BN;
 }
+
+Fuse.FUSE_POOL_DIRECTORY_CONTRACT_ADDRESS = "0xDc64a140Aa3E981100a9becA4E685f962f0cF6C9";
+Fuse.FUSE_SAFE_LIQUIDATOR_CONTRACT_ADDRESS = "0x0165878A594ca255338adfa4d48449f69242Eb8F";
+Fuse.OPEN_ORACLE_PRICE_DATA_CONTRACT_ADDRESS = "0xc629c26dced4277419cde234012f8160a0278a79";
+Fuse.COINBASE_PRO_REPORTER_ADDRESS = "0xfCEAdAFab14d46e20144F48824d0C09B1a03F2BC";
+
+// TODO: Add Deployment Addresses
+Fuse.COMPTROLLER_IMPLEMENTATION_CONTRACT_ADDRESS = "0x0";
+Fuse.CERC20_DELEGATE_CONTRACT_ADDRESS = "0x0";
+Fuse.CETHER_DELEGATE_CONTRACT_ADDRESS = "0x0";
+Fuse.PUBLIC_PREFERRED_PRICE_ORACLE_CONTRACT_ADDRESS = "0x0";
+Fuse.PUBLIC_CHAINLINK_PRICE_ORACLE_CONTRACT_ADDRESS = "0x0";
+Fuse.PUBLIC_UNISWAP_VIEW_CONTRACT_ADDRESS = "0x0";
+
+
+export default Fuse;
