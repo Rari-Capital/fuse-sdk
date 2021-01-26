@@ -13,6 +13,10 @@ export default class Fuse {
   static CERC20_DELEGATE_CONTRACT_ADDRESS;
   static CETHER_DELEGATE_CONTRACT_ADDRESS;
   static OPEN_ORACLE_PRICE_DATA_CONTRACT_ADDRESS = "0xc629c26dced4277419cde234012f8160a0278a79";
+  static COINBASE_PRO_REPORTER_ADDRESS = "0xfCEAdAFab14d46e20144F48824d0C09B1a03F2BC";
+  static PUBLIC_PREFERRED_PRICE_ORACLE_CONTRACT_ADDRESS;
+  static PUBLIC_CHAINLINK_PRICE_ORACLE_CONTRACT_ADDRESS;
+  static PUBLIC_UNISWAP_VIEW_CONTRACT_ADDRESS;
 
   constructor(web3Provider) {
     this.web3 = new Web3(web3Provider);
@@ -31,11 +35,11 @@ export default class Fuse {
       .join('')}`).slice(-40)}`.toLowerCase()
     }
 
-    this.deployPool = async function(poolName, isPrivate, closeFactor, maxAssets, liquidationIncentive, priceOracle, options) {
+    this.deployPool = async function(poolName, isPrivate, closeFactor, maxAssets, liquidationIncentive, priceOracle, priceOracleConf, options) {
       // Deploy new price oracle via SDK if requested
       if (["SimplePriceOracle", "PreferredPriceOracle", "ChainlinkPriceOracle", "UniswapAnchoredView", "UniswapView"].indexOf(priceOracle) >= 0) {
         try {
-          priceOracle = await this.deployPriceOracle(priceOracle, { isPublic: false }, options); // TODO: anchorMantissa / anchorPeriod
+          priceOracle = await this.deployPriceOracle(priceOracle, priceOracleConf, options); // TODO: anchorMantissa / anchorPeriod
         } catch (error) {
           throw "Deployment of price oracle failed: " + (error.message ? error.message : error);
         }
@@ -68,14 +72,14 @@ export default class Fuse {
         throw "Accepting admin status failed: " + (error.message ? error.message : error);
       }
 
-      return [poolAddress, receipt];
+      return [poolAddress, implementationAddress, priceOracle];
     }
 
-    this._deployPool = async function(poolName, isPrivate, closeFactor, maxAssets, liquidationIncentive, priceOracle, options) {
+    this._deployPool = async function(poolName, isPrivate, closeFactor, maxAssets, liquidationIncentive, priceOracle, priceOracleConf, options) {
       // Deploy new price oracle via SDK if requested
       if (["SimplePriceOracle", "PreferredPriceOracle", "ChainlinkPriceOracle", "UniswapAnchoredView", "UniswapView"].indexOf(priceOracle) >= 0) {
         try {
-          priceOracle = await this.deployPriceOracle(priceOracle, { isPublic: false }, options); // TODO: anchorMantissa / anchorPeriod
+          priceOracle = await this.deployPriceOracle(priceOracle, priceOracleConf, options); // TODO: anchorMantissa / anchorPeriod
         } catch (error) {
           throw "Deployment of price oracle failed: " + (error.message ? error.message : error);
         }
@@ -83,7 +87,7 @@ export default class Fuse {
 
       // Deploy new pool via SDK
       try {
-        var [poolAddress, receipt] = await this.deployComptroller(closeFactor, maxAssets, liquidationIncentive, priceOracle, null, options);
+        var [poolAddress, implementationAddress] = await this.deployComptroller(closeFactor, maxAssets, liquidationIncentive, priceOracle, null, options);
       } catch (error) {
         throw "Deployment of Comptroller failed: " + (error.message ? error.message : error);
       }
@@ -95,7 +99,7 @@ export default class Fuse {
         throw "Registration of new Fuse pool failed: " + (error.message ? error.message : error);
       }
 
-      return [poolAddress, receipt];
+      return [poolAddress, implementationAddress, priceOracle];
     }
 
     this.deployPriceOracle = async function(model, conf, options) {
@@ -119,9 +123,12 @@ export default class Fuse {
           priceOracle = await priceOracle.deploy({ data: "0x" + contracts["contracts/ChainlinkPriceOracle.sol:ChainlinkPriceOracle"].bin }).send(options);
           break;
         case "UniswapAnchoredView":
-          const reporter = "0xfCEAdAFab14d46e20144F48824d0C09B1a03F2BC";
+          // Input validation/default config
+          if (!conf || conf.reporter === undefined || conf.reporter === null || conf.reporter === "") conf.reporter = Fuse.COINBASE_PRO_REPORTER_ADDRESS;
           if (!conf || conf.anchorMantissa === undefined || conf.anchorMantissa === null) conf.anchorMantissa = Web3.utils.toBN(1e17); // 1e17 equates to 10% tolerance for source price to be above or below anchor
           if (!conf || conf.anchorPeriod === undefined || conf.anchorPeriod === null) conf.anchorPeriod = 30 * 60;
+
+          // Deploy UniswapAnchoredView with ETH token config
           var priceOracle = new this.web3.eth.Contract(JSON.parse(openOracleContracts["contracts/Uniswap/UniswapAnchoredView.sol:UniswapAnchoredView"].abi));
           var PriceSource = {
             FIXED_ETH: 0,
@@ -130,14 +137,19 @@ export default class Fuse {
             TWAP: 3
           };
           var tokenConfigs = [{ underlying: "0x0000000000000000000000000000000000000000", symbolHash: Web3.utils.soliditySha3("ETH"), baseUnit: Web3.utils.toBN(1e18).toString(), priceSource: PriceSource.REPORTER, fixedPrice: 0, uniswapMarket: "0xB4e16d0168e52d35CaCD2c6185b44281Ec28C9Dc", isUniswapReversed: true }];
-          var deployArgs = [Fuse.OPEN_ORACLE_PRICE_DATA_CONTRACT_ADDRESS, reporter, conf.anchorMantissa, conf.anchorPeriod, tokenConfigs];
+          var deployArgs = [Fuse.OPEN_ORACLE_PRICE_DATA_CONTRACT_ADDRESS, conf.reporter, conf.anchorMantissa, conf.anchorPeriod, tokenConfigs];
           priceOracle = await priceOracle.deploy({ data: "0x" + openOracleContracts["contracts/Uniswap/UniswapAnchoredView.sol:UniswapAnchoredView"].bin, arguments: deployArgs }).send(options);
-          // TODO: Report first ETH/USD price to UniswapAnchoredView
+
+          // Post reported ETH/USD price or (if price has never been reported) have user report and post price
+          var priceData = new this.web3.eth.Contract(JSON.parse(openOracleContracts["contracts/OpenOraclePriceData.sol:OpenOraclePriceData"].abi), Fuse.OPEN_ORACLE_PRICE_DATA_CONTRACT_ADDRESS);
+          if (Web3.utils.toBN(await priceData.methods.getPrice(conf.reporter, "ETH").call()).gt(Web3.utils.toBN(0))) await priceOracle.methods.postPrices([], [], ["ETH"]).send({ ...options });
+          else prompt("It looks like prices have never been reported for ETH. ETH prices are necessary to convert posted USD prices into outputted ETH prices. Please click OK once you have reported and posted prices for ETH.");
+          
           break;
         case "UniswapView":
           if (!conf || conf.anchorPeriod === undefined || conf.anchorPeriod === null) conf.anchorPeriod = 30 * 60;
           var priceOracle = new this.web3.eth.Contract(JSON.parse(openOracleContracts["contracts/Uniswap/UniswapView.sol:UniswapView"].abi));
-          var deployArgs = [conf.anchorPeriod, conf.tokenConfigs !== undefined ? conf.tokenConfigs : [], conf.isPublic];
+          var deployArgs = [conf.anchorPeriod, conf.tokenConfigs !== undefined ? conf.tokenConfigs : [], conf.isPublic ? true : false];
           priceOracle = await priceOracle.deploy({ data: "0x" + openOracleContracts["contracts/Uniswap/UniswapView.sol:UniswapView"].bin, arguments: deployArgs }).send(options);
           break;
         default:
@@ -182,12 +194,12 @@ export default class Fuse {
 
       // Deploy new asset to existing pool via SDK
       try {
-        var [assetAddress, receipt] = await this.deployCToken(conf, true, collateralFactor, reserveFactor, adminFee, options, bypassPriceFeedCheck);
+        var [assetAddress, implementationAddress] = await this.deployCToken(conf, true, collateralFactor, reserveFactor, adminFee, options, bypassPriceFeedCheck);
       } catch (error) {
         throw "Deployment of asset to Fuse pool failed: " + (error.message ? error.message : error);
       }
 
-      return [assetAddress, receipt];
+      return [assetAddress, implementationAddress, conf.interestRateModel];
     }
 
     this.deployInterestRateModel = async function(model, options) {
@@ -306,6 +318,14 @@ export default class Fuse {
             if (conf.underlying == "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2") {
               // WETH
               await uniswapOrUniswapAnchoredView.methods.add([{ underlying: conf.underlying, symbolHash: Web3.utils.soliditySha3(underlyingSymbol), baseUnit: Web3.utils.toBN(10).pow(Web3.utils.toBN(underlyingDecimals)).toString(), priceSource: PriceSource.FIXED_ETH, fixedPrice: Web3.utils.toBN(1e18).toString(), uniswapMarket: "0x0000000000000000000000000000000000000000", isUniswapReversed: false }]).send({ ...options });
+            } else if (conf.underlying === "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48") {
+              // USDC
+              if (isUniswapAnchoredView) {
+                await uniswapOrUniswapAnchoredView.methods.add([{ underlying: "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48", symbolHash: Web3.utils.soliditySha3("USDC"), baseUnit: Web3.utils.toBN(1e6).toString(), priceSource: PriceSource.FIXED_USD, fixedPrice: 1e6, uniswapMarket: "0x0000000000000000000000000000000000000000", isUniswapReversed: false }]).send({ ...options });
+              } else {
+                await uniswapOrUniswapAnchoredView.methods.add([{ underlying: "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48", symbolHash: Web3.utils.soliditySha3("USDC"), baseUnit: Web3.utils.toBN(1e6).toString(), priceSource: PriceSource.TWAP, fixedPrice: 0, uniswapMarket: "0xb4e16d0168e52d35cacd2c6185b44281ec28c9dc", isUniswapReversed: false }]).send({ ...options });
+                await uniswapOrUniswapAnchoredView.methods.postPrices(["0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"]).send({ ...options });
+              }
             } else {
               // Ask about fixed prices if UniswapAnchoredView or if UniswapView is not public; otherwise, prompt for Uniswap V2 pair
               if (isUniswapAnchoredView || !(await uniswapOrUniswapAnchoredView.methods.isPublic().call())) {
@@ -316,7 +336,9 @@ export default class Fuse {
                   await uniswapOrUniswapAnchoredView.methods.add([{ underlying: conf.underlying, symbolHash: Web3.utils.soliditySha3(underlyingSymbol), baseUnit: Web3.utils.toBN(10).pow(Web3.utils.toBN(underlyingDecimals)).toString(), priceSource: PriceSource.FIXED_ETH, fixedPrice: Web3.utils.toBN(1e18).toString(), uniswapMarket: "0x0000000000000000000000000000000000000000", isUniswapReversed: false }]).send({ ...options });
                 } else {
                   // Check for fixed USD
-                  var fixedUsd = confirm("Should the price of this token be fixed to 1 USD?" + (isUniswapAnchoredView ? "" : "If so, please note that you will need to run postPrices on your UniswapView for USDC instead of " + underlyingSymbol + " (as technically, the " + underlyingSymbol + " price would be fixed to 1 USDC)."));
+                  var msg = "Should the price of this token be fixed to 1 USD?";
+                  if (!isUniswapAnchoredView) msg += " If so, please note that you will need to run postPrices on your UniswapView for USDC instead of " + underlyingSymbol + " (as technically, the " + underlyingSymbol + " price would be fixed to 1 USDC).";
+                  var fixedUsd = confirm(msg);
 
                   if (fixedUsd) {
                     var tokenConfigs = [{ underlying: conf.underlying, symbolHash: Web3.utils.soliditySha3(underlyingSymbol), baseUnit: Web3.utils.toBN(10).pow(Web3.utils.toBN(underlyingDecimals)).toString(), priceSource: PriceSource.FIXED_USD, fixedPrice: Web3.utils.toBN(1e6).toString(), uniswapMarket: "0x0000000000000000000000000000000000000000", isUniswapReversed: false }];
@@ -335,18 +357,27 @@ export default class Fuse {
 
                     // UniswapView only: post USDC price
                     if (!isUniswapAnchoredView) await uniswapOrUniswapAnchoredView.methods.postPrices(["0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"]).send({ ...options });
-                  } else await promptForUniswapV2Pair(); // Prompt for Uniswap V2 pair
+                  } else await promptForUniswapV2Pair(this.web3); // Prompt for Uniswap V2 pair
                 }
-              } else await promptForUniswapV2Pair(); // Prompt for Uniswap V2 pair
+              } else await promptForUniswapV2Pair(this.web3); // Prompt for Uniswap V2 pair
 
-              async function promptForUniswapV2Pair() {
+              async function promptForUniswapV2Pair(web3) {
                 var uniswapV2Pair = prompt("Please enter the underlying token's ETH-based Uniswap V2 pair address:");
         
                 if (uniswapV2Pair.length > 0) {
                   var isNotReversed = confirm("Press OK if the Uniswap V2 pair is " + underlyingSymbol + "/ETH? If it is reversed (ETH/" + underlyingSymbol + "), press Cancel.");
                   await uniswapOrUniswapAnchoredView.methods.add([{ underlying: conf.underlying, symbolHash: Web3.utils.soliditySha3(underlyingSymbol), baseUnit: Web3.utils.toBN(10).pow(Web3.utils.toBN(underlyingDecimals)).toString(), priceSource: isUniswapAnchoredView ? PriceSource.REPORTER : PriceSource.TWAP, fixedPrice: 0, uniswapMarket: uniswapV2Pair, isUniswapReversed: !isNotReversed }]).send({ ...options });
-                  if (!isUniswapAnchoredView) await uniswapOrUniswapAnchoredView.methods.postPrices([ conf.underlying ]).send({ ...options });
-                  // TODO: Post first price to UniswapAnchoredView
+
+                  // Post first price
+                  if (isUniswapAnchoredView) {
+                    // Post reported price or (if price has never been reported) have user report and post price
+                    var priceData = new web3.eth.Contract(JSON.parse(openOracleContracts["contracts/OpenOraclePriceData.sol:OpenOraclePriceData"].abi), await uniswapOrUniswapAnchoredView.methods.priceData().call());
+                    var reporter = await uniswapOrUniswapAnchoredView.methods.reporter().call();
+                    if (Web3.utils.toBN(await priceData.methods.getPrice(reporter, underlyingSymbol).call()).gt(Web3.utils.toBN(0))) await uniswapOrUniswapAnchoredView.methods.postPrices([], [], [underlyingSymbol]).send({ ...options });
+                    else prompt("It looks like prices have never been reported for " + underlyingSymbol + ". Please click OK once you have reported and posted prices for" + underlyingSymbol + ".");
+                  } else {
+                    await uniswapOrUniswapAnchoredView.methods.postPrices([ conf.underlying ]).send({ ...options });
+                  }
                 } else throw isUniswapAnchoredView ? "Reported prices must have a Uniswap V2 pair as an anchor!" : "Non-fixed prices must have a Uniswap V2 pair from which to source prices!";
               }
             }
