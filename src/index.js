@@ -1,6 +1,10 @@
 /* eslint-disable */
 import Web3 from "web3";
 
+import JumpRateModel from "./irm/JumpRateModel.js";
+import DAIInterestRateModelV2 from "./irm/DAIInterestRateModelV2.js";
+import WhitePaperInterestRateModel from "./irm/WhitePaperInterestRateModel.js";
+
 var fusePoolDirectoryAbi = require(__dirname + "/abi/FusePoolDirectory.json");
 var fuseSafeLiquidatorAbi = require(__dirname + "/abi/FuseSafeLiquidator.json");
 var contracts = require(__dirname + "/contracts/compound-protocol.json").contracts;
@@ -434,6 +438,25 @@ export default class Fuse {
 
       // Return cToken proxy and implementation contract addresses
       return [cErc20Delegator.options.address, implementationAddress];
+    };
+
+    this.getInterestRateModel = async function(assetAddress) {
+      // Get interest rate model address from asset address
+      var assetContract = new this.web3.eth.Contract(JSON.parse(contracts["contracts/CTokenInterfaces.sol:CTokenInterface"].abi), assetAddress);
+      var interestRateModelAddress = await assetContract.methods.interestRateModel().call();
+  
+      // Get interest rate model type and init class
+      var interestRateModels = {
+        "JumpRateModel": JumpRateModel,
+        "DAIInterestRateModelV2": DAIInterestRateModelV2,
+        "WhitePaperInterestRateModel": WhitePaperInterestRateModel
+      };
+  
+      var bytecode = await this.web3.eth.getCode(interestRateModelAddress);
+      var interestRateModel = null;
+      for (const model of ["JumpRateModel", "DAIInterestRateModelV2", "WhitePaperInterestRateModel"]) if (bytecode == interestRateModels[model].RUNTIME_BYTECODE) interestRateModel = new interestRateModels[model]();
+      await interestRateModel.init(this.web3, interestRateModelAddress, assetAddress);
+      return interestRateModel;
     };
   }
 
