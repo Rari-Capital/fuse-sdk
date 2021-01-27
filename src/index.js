@@ -24,6 +24,8 @@ export default class Fuse {
       FusePoolDirectory: new this.web3.eth.Contract(fusePoolDirectoryAbi, Fuse.FUSE_POOL_DIRECTORY_CONTRACT_ADDRESS),
       FuseSafeLiquidator: new this.web3.eth.Contract(fuseSafeLiquidatorAbi, Fuse.FUSE_SAFE_LIQUIDATOR_CONTRACT_ADDRESS)
     };
+    this.compoundContracts = contracts;
+    this.openOracleContracts = openOracleContracts;
 
     this.getCreate2Address = function(creatorAddress, salt, byteCode) {
       return `0x${this.web3.utils.sha3(`0x${[
