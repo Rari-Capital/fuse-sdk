@@ -9,14 +9,20 @@ var openOracleContracts = require(__dirname + "/contracts/open-oracle.json").con
 export default class Fuse {
   static FUSE_POOL_DIRECTORY_CONTRACT_ADDRESS = "0xDc64a140Aa3E981100a9becA4E685f962f0cF6C9";
   static FUSE_SAFE_LIQUIDATOR_CONTRACT_ADDRESS = "0x0165878A594ca255338adfa4d48449f69242Eb8F";
+
   static COMPTROLLER_IMPLEMENTATION_CONTRACT_ADDRESS;
   static CERC20_DELEGATE_CONTRACT_ADDRESS;
   static CETHER_DELEGATE_CONTRACT_ADDRESS;
+
   static OPEN_ORACLE_PRICE_DATA_CONTRACT_ADDRESS = "0xc629c26dced4277419cde234012f8160a0278a79";
   static COINBASE_PRO_REPORTER_ADDRESS = "0xfCEAdAFab14d46e20144F48824d0C09B1a03F2BC";
+
   static PUBLIC_PREFERRED_PRICE_ORACLE_CONTRACT_ADDRESS;
   static PUBLIC_CHAINLINK_PRICE_ORACLE_CONTRACT_ADDRESS;
   static PUBLIC_UNISWAP_VIEW_CONTRACT_ADDRESS;
+
+  static DAI_POT = "0x197e90f9fad81970ba7976f33cbd77088e5d7cf7";
+  static DAI_JUG = "0x19c0976f590d67707e62397c87829d896dc0f1f1";
 
   constructor(web3Provider) {
     this.web3 = new Web3(web3Provider);
@@ -188,7 +194,7 @@ export default class Fuse {
       // Deploy new interest rate model via SDK if requested
       if (["WhitePaperInterestRateModel", "JumpRateModel", "DAIInterestRateModelV2"].indexOf(conf.interestRateModel) >= 0) {
         try {
-          conf.interestRateModel = await this.deployInterestRateModel(conf.interestRateModel, options); // TODO: anchorMantissa
+          conf.interestRateModel = await this.deployInterestRateModel(conf.interestRateModel, conf.interestRateModelConf, options); // TODO: anchorMantissa
         } catch (error) {
           throw "Deployment of interest rate model failed: " + (error.message ? error.message : error);
         }
@@ -204,10 +210,31 @@ export default class Fuse {
       return [assetAddress, implementationAddress, conf.interestRateModel];
     }
 
-    this.deployInterestRateModel = async function(model, options) {
-      if (!model) model = "JumpRateModel";
+    this.deployInterestRateModel = async function(model, conf, options) {
+      // Default model = JumpRateModel
+      if (!model) {
+        model = "JumpRateModel";
+        conf = { baseRatePerYear: "19999999999728000", multiplierPerYear: "199999999999382400", jumpMultiplierPerYear: "1999999999998028800", kink: "900000000000000000" };
+      }
+
+      // Get deployArgs
+      var deployArgs = [];
+
+      switch (model) {
+        case "JumpRateModel":
+          deployArgs = [conf.baseRatePerYear, conf.multiplierPerYear, conf.jumpMultiplierPerYear, conf.kink];
+          break;
+        case "DAIInterestRateModelV2":
+          deployArgs = [conf.jumpMultiplierPerYear, conf.kink, Fuse.DAI_POT, Fuse.DAI_JUG];
+          break;
+        case "WhitePaperInterestRateModel":
+          deployArgs = [conf.baseRatePerBlock, conf.multiplierPerBlock];
+          break;
+      }
+
+      // Deploy InterestRateModel
       var interestRateModel = new this.web3.eth.Contract(JSON.parse(contracts["contracts/" + model + ".sol:" + model].abi));
-      interestRateModel = await interestRateModel.deploy({ data: "0x" + contracts["contracts/" + model + ".sol:" + model].bin }).send(options);
+      interestRateModel = await interestRateModel.deploy({ data: "0x" + contracts["contracts/" + model + ".sol:" + model].bin, arguments: deployArgs }).send(options);
       return interestRateModel.options.address;
     };
     
