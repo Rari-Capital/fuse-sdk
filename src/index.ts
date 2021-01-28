@@ -1,5 +1,6 @@
 /* eslint-disable */
 import Web3 from "web3";
+import { Provider, FuseOptions } from './types';
 
 import JumpRateModel from "./irm/JumpRateModel.js";
 import DAIInterestRateModelV2 from "./irm/DAIInterestRateModelV2.js";
@@ -10,26 +11,52 @@ var fuseSafeLiquidatorAbi = require(__dirname + "/abi/FuseSafeLiquidator.json");
 var contracts = require(__dirname + "/contracts/compound-protocol.json").contracts;
 var openOracleContracts = require(__dirname + "/contracts/open-oracle.json").contracts;
 
-export default class Fuse {
-  static FUSE_POOL_DIRECTORY_CONTRACT_ADDRESS = "0xDc64a140Aa3E981100a9becA4E685f962f0cF6C9";
-  static FUSE_SAFE_LIQUIDATOR_CONTRACT_ADDRESS = "0x0165878A594ca255338adfa4d48449f69242Eb8F";
 
+class Fuse {
+
+  // TODO: Add Deployed Addresses
   static COMPTROLLER_IMPLEMENTATION_CONTRACT_ADDRESS;
   static CERC20_DELEGATE_CONTRACT_ADDRESS;
   static CETHER_DELEGATE_CONTRACT_ADDRESS;
-
-  static OPEN_ORACLE_PRICE_DATA_CONTRACT_ADDRESS = "0xc629c26dced4277419cde234012f8160a0278a79";
-  static COINBASE_PRO_REPORTER_ADDRESS = "0xfCEAdAFab14d46e20144F48824d0C09B1a03F2BC";
 
   static PUBLIC_PREFERRED_PRICE_ORACLE_CONTRACT_ADDRESS;
   static PUBLIC_CHAINLINK_PRICE_ORACLE_CONTRACT_ADDRESS;
   static PUBLIC_UNISWAP_VIEW_CONTRACT_ADDRESS;
 
+  static OPEN_ORACLE_PRICE_DATA_CONTRACT_ADDRESS = "0xc629c26dced4277419cde234012f8160a0278a79";
+  static COINBASE_PRO_REPORTER_ADDRESS = "0xfCEAdAFab14d46e20144F48824d0C09B1a03F2BC";
+
   static DAI_POT = "0x197e90f9fad81970ba7976f33cbd77088e5d7cf7";
   static DAI_JUG = "0x19c0976f590d67707e62397c87829d896dc0f1f1";
 
-  constructor(web3Provider) {
-    this.web3 = new Web3(web3Provider);
+  static FUSE_POOL_DIRECTORY_CONTRACT_ADDRESS = "0xDc64a140Aa3E981100a9becA4E685f962f0cF6C9";
+  static FUSE_SAFE_LIQUIDATOR_CONTRACT_ADDRESS = "0x0165878A594ca255338adfa4d48449f69242Eb8F";
+
+  // * @dev static Web3 declarations
+  static Web3 = Web3;
+  // @ts-ignore
+  static BN = Web3.utils.BN;
+
+  // * @dev Type declarations
+  web3: Web3;
+  contracts: any;
+  getCreate2Address: (creatorAddress: any, salt: any, byteCode: any) => string;
+  deployPool: (poolName: any, isPrivate: any, closeFactor: any, maxAssets: any, liquidationIncentive: any, priceOracle: any, priceOracleConf: any, options: any) => Promise<any[]>;
+  _deployPool: (poolName: any, isPrivate: any, closeFactor: any, maxAssets: any, liquidationIncentive: any, priceOracle: any, priceOracleConf: any, options: any) => Promise<any[]>;
+  deployPriceOracle: (model: any, conf: any, options: any) => Promise<any>;
+  deployComptroller: (closeFactor: any, maxAssets: any, liquidationIncentive: any, priceOracle: any, implementationAddress: any, options: any) => Promise<any[]>;
+  deployAsset: (conf: any, collateralFactor: any, reserveFactor: any, adminFee: any, options: any, bypassPriceFeedCheck: any) => Promise<any[]>;
+  deployInterestRateModel: (model: any, conf: any, options: any) => Promise<any>;
+  deployCToken: (conf: any, supportMarket: any, collateralFactor: any, reserveFactor: any, adminFee: any, options: any, bypassPriceFeedCheck: any) => Promise<any>;
+  deployCEther: (conf: any, supportMarket: any, collateralFactor: any, reserveFactor: any, adminFee: any, implementationAddress: any, options: any) => Promise<any[]>;
+  deployCErc20: (conf: any, supportMarket: any, collateralFactor: any, reserveFactor: any, adminFee: any, implementationAddress: any, options: any, bypassPriceFeedCheck: any) => Promise<any[]>;
+  compoundContracts: any;
+  openOracleContracts: any;
+  getInterestRateModel: (assetAddress: any) => Promise<any>;
+
+
+  constructor(provider: any, options: FuseOptions = {}) {
+    this.web3 = new Web3(provider);
     this.contracts = {
       FusePoolDirectory: new this.web3.eth.Contract(fusePoolDirectoryAbi, Fuse.FUSE_POOL_DIRECTORY_CONTRACT_ADDRESS),
       FuseSafeLiquidator: new this.web3.eth.Contract(fuseSafeLiquidatorAbi, Fuse.FUSE_SAFE_LIQUIDATOR_CONTRACT_ADDRESS)
@@ -56,7 +83,7 @@ export default class Fuse {
           throw "Deployment of price oracle failed: " + (error.message ? error.message : error);
         }
       }
-      
+
       // Deploy Comptroller implementation if necessary
       var implementationAddress = Fuse.COMPTROLLER_IMPLEMENTATION_CONTRACT_ADDRESS;
 
@@ -110,18 +137,16 @@ export default class Fuse {
       } catch (error) {
         throw "Registration of new Fuse pool failed: " + (error.message ? error.message : error);
       }
-
       return [poolAddress, implementationAddress, priceOracle];
     }
 
     this.deployPriceOracle = async function(model, conf, options) {
       if (!model) model = "PreferredPriceOracle";
-
       switch (model) {
         case "PreferredPriceOracle":
           // Deploy ChainlinkPriceOracle
           if (!conf.chainlinkPriceOracle) conf.chainlinkPriceOracle = await this.deployPriceOracle("ChainlinkPriceOracle", {}, options);
-          
+
           // Deploy Uniswap price oracle
           if (!conf.uniswapPriceOracle) conf.uniswapPriceOracle = await this.deployPriceOracle("UniswapView", { isPublic: conf.isPublic }, options);
 
@@ -156,7 +181,7 @@ export default class Fuse {
           var priceData = new this.web3.eth.Contract(JSON.parse(openOracleContracts["contracts/OpenOraclePriceData.sol:OpenOraclePriceData"].abi), Fuse.OPEN_ORACLE_PRICE_DATA_CONTRACT_ADDRESS);
           if (Web3.utils.toBN(await priceData.methods.getPrice(conf.reporter, "ETH").call()).gt(Web3.utils.toBN(0))) await priceOracle.methods.postPrices([], [], ["ETH"]).send({ ...options });
           else prompt("It looks like prices have never been reported for ETH. ETH prices are necessary to convert posted USD prices into outputted ETH prices. Please click OK once you have reported and posted prices for ETH.");
-          
+
           break;
         case "UniswapView":
           if (!conf || conf.anchorPeriod === undefined || conf.anchorPeriod === null) conf.anchorPeriod = 30 * 60;
@@ -169,7 +194,7 @@ export default class Fuse {
           priceOracle = await priceOracle.deploy({ data: "0x" + contracts["contracts/" + model + ".sol:" + model].bin }).send(options);
           break;
       }
-      
+
       return priceOracle.options.address;
     };
 
@@ -241,11 +266,11 @@ export default class Fuse {
       interestRateModel = await interestRateModel.deploy({ data: "0x" + contracts["contracts/" + model + ".sol:" + model].bin, arguments: deployArgs }).send(options);
       return interestRateModel.options.address;
     };
-    
+
     this.deployCToken = async function(conf, supportMarket, collateralFactor, reserveFactor, adminFee, options, bypassPriceFeedCheck) {
       return conf.underlying !== undefined && conf.underlying !== null && conf.underlying.length > 0 ? await this.deployCErc20(conf, supportMarket, collateralFactor, reserveFactor, adminFee, Fuse.CERC20_DELEGATE_CONTRACT_ADDRESS ? Fuse.CERC20_DELEGATE_CONTRACT_ADDRESS : null, options, bypassPriceFeedCheck) : await this.deployCEther(conf, supportMarket, collateralFactor, reserveFactor, adminFee, Fuse.CETHER_DELEGATE_CONTRACT_ADDRESS ? Fuse.CETHER_DELEGATE_CONTRACT_ADDRESS : null, options);
     };
-    
+
     this.deployCEther = async function(conf, supportMarket, collateralFactor, reserveFactor, adminFee, implementationAddress, options) {
       // Deploy CEtherDelegate implementation contract if necessary
       if (!implementationAddress) {
@@ -269,7 +294,7 @@ export default class Fuse {
       // Return cToken proxy and implementation contract addresses
       return [cEtherDelegator.options.address, implementationAddress];
     };
-    
+
     this.deployCErc20 = async function(conf, supportMarket, collateralFactor, reserveFactor, adminFee, implementationAddress, options, bypassPriceFeedCheck) {
       // Get Comptroller
       var comptroller = new this.web3.eth.Contract(JSON.parse(contracts["contracts/Comptroller.sol:Comptroller"].abi), conf.comptroller);
@@ -294,7 +319,7 @@ export default class Fuse {
             var chainlinkPriceFeed = await chainlinkPriceOracle.methods.priceFeeds(conf.underlying).call();
           } catch { }
         }
-        
+
         if (chainlinkPriceFeed === undefined || Web3.utils.toBN(chainlinkPriceFeed).isZero()) {
           // Check if we can get a UniswapAnchoredView
           var isUniswapAnchoredView = false;
@@ -381,7 +406,7 @@ export default class Fuse {
                       try {
                         await uniswapOrUniswapAnchoredView.methods.getTokenConfigByUnderlying("0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48").call();
                       } catch (error) {
-                        tokenConfigs.push({ underlying: "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48", symbolHash: Web3.utils.soliditySha3("USDC"), baseUnit: Web3.utils.toBN(1e6).toString(), priceSource: PriceSource.TWAP, fixedPrice: 0, uniswapMarket: "0xb4e16d0168e52d35cacd2c6185b44281ec28c9dc", isUniswapReversed: false });
+                        tokenConfigs.push({ underlying: "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48", symbolHash: Web3.utils.soliditySha3("USDC"), baseUnit: Web3.utils.toBN(1e6).toString(), priceSource: PriceSource.TWAP, fixedPrice: '0', uniswapMarket: "0xb4e16d0168e52d35cacd2c6185b44281ec28c9dc", isUniswapReversed: false });
                       }
                     }
 
@@ -396,7 +421,7 @@ export default class Fuse {
 
               async function promptForUniswapV2Pair(web3) {
                 var uniswapV2Pair = prompt("Please enter the underlying token's ETH-based Uniswap V2 pair address:");
-        
+
                 if (uniswapV2Pair.length > 0) {
                   var isNotReversed = confirm("Press OK if the Uniswap V2 pair is " + underlyingSymbol + "/ETH? If it is reversed (ETH/" + underlyingSymbol + "), press Cancel.");
                   await uniswapOrUniswapAnchoredView.methods.add([{ underlying: conf.underlying, symbolHash: Web3.utils.soliditySha3(underlyingSymbol), baseUnit: Web3.utils.toBN(10).pow(Web3.utils.toBN(underlyingDecimals)).toString(), priceSource: isUniswapAnchoredView ? PriceSource.REPORTER : PriceSource.TWAP, fixedPrice: 0, uniswapMarket: uniswapV2Pair, isUniswapReversed: !isNotReversed }]).send({ ...options });
@@ -459,7 +484,7 @@ export default class Fuse {
       return interestRateModel;
     };
   }
-
-  static Web3 = Web3;
-  static BN = Web3.utils.BN;
 }
+
+
+export default Fuse;
