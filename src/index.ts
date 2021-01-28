@@ -2,6 +2,10 @@
 import Web3 from "web3";
 import { Provider, FuseOptions } from './types';
 
+import JumpRateModel from "./irm/JumpRateModel.js";
+import DAIInterestRateModelV2 from "./irm/DAIInterestRateModelV2.js";
+import WhitePaperInterestRateModel from "./irm/WhitePaperInterestRateModel.js";
+
 var fusePoolDirectoryAbi = require(__dirname + "/abi/FusePoolDirectory.json");
 var fuseSafeLiquidatorAbi = require(__dirname + "/abi/FuseSafeLiquidator.json");
 var contracts = require(__dirname + "/contracts/compound-protocol.json").contracts;
@@ -9,18 +13,24 @@ var openOracleContracts = require(__dirname + "/contracts/open-oracle.json").con
 
 
 class Fuse {
-  static FUSE_POOL_DIRECTORY_CONTRACT_ADDRESS = "0xDc64a140Aa3E981100a9becA4E685f962f0cF6C9";
-  static FUSE_SAFE_LIQUIDATOR_CONTRACT_ADDRESS = "0x0165878A594ca255338adfa4d48449f69242Eb8F";
+
+  // TODO: Add Deployed Addresses
+  static COMPTROLLER_IMPLEMENTATION_CONTRACT_ADDRESS;
+  static CERC20_DELEGATE_CONTRACT_ADDRESS;
+  static CETHER_DELEGATE_CONTRACT_ADDRESS;
+
+  static PUBLIC_PREFERRED_PRICE_ORACLE_CONTRACT_ADDRESS;
+  static PUBLIC_CHAINLINK_PRICE_ORACLE_CONTRACT_ADDRESS;
+  static PUBLIC_UNISWAP_VIEW_CONTRACT_ADDRESS;
+
   static OPEN_ORACLE_PRICE_DATA_CONTRACT_ADDRESS = "0xc629c26dced4277419cde234012f8160a0278a79";
   static COINBASE_PRO_REPORTER_ADDRESS = "0xfCEAdAFab14d46e20144F48824d0C09B1a03F2BC";
 
-  // TODO: Add Deployment Addresses
-  static COMPTROLLER_IMPLEMENTATION_CONTRACT_ADDRESS = "0x0";
-  static CERC20_DELEGATE_CONTRACT_ADDRESS = "0x0";
-  static CETHER_DELEGATE_CONTRACT_ADDRESS = "0x0";
-  static PUBLIC_PREFERRED_PRICE_ORACLE_CONTRACT_ADDRESS = "0x0";
-  static PUBLIC_CHAINLINK_PRICE_ORACLE_CONTRACT_ADDRESS = "0x0";
-  static PUBLIC_UNISWAP_VIEW_CONTRACT_ADDRESS = "0x0";
+  static DAI_POT = "0x197e90f9fad81970ba7976f33cbd77088e5d7cf7";
+  static DAI_JUG = "0x19c0976f590d67707e62397c87829d896dc0f1f1";
+
+  static FUSE_POOL_DIRECTORY_CONTRACT_ADDRESS = "0xDc64a140Aa3E981100a9becA4E685f962f0cF6C9";
+  static FUSE_SAFE_LIQUIDATOR_CONTRACT_ADDRESS = "0x0165878A594ca255338adfa4d48449f69242Eb8F";
 
   // * @dev static Web3 declarations
   static Web3 = Web3;
@@ -36,10 +46,13 @@ class Fuse {
   deployPriceOracle: (model: any, conf: any, options: any) => Promise<any>;
   deployComptroller: (closeFactor: any, maxAssets: any, liquidationIncentive: any, priceOracle: any, implementationAddress: any, options: any) => Promise<any[]>;
   deployAsset: (conf: any, collateralFactor: any, reserveFactor: any, adminFee: any, options: any, bypassPriceFeedCheck: any) => Promise<any[]>;
-  deployInterestRateModel: (model: any, options: any) => Promise<any>;
+  deployInterestRateModel: (model: any, conf: any, options: any) => Promise<any>;
   deployCToken: (conf: any, supportMarket: any, collateralFactor: any, reserveFactor: any, adminFee: any, options: any, bypassPriceFeedCheck: any) => Promise<any>;
   deployCEther: (conf: any, supportMarket: any, collateralFactor: any, reserveFactor: any, adminFee: any, implementationAddress: any, options: any) => Promise<any[]>;
   deployCErc20: (conf: any, supportMarket: any, collateralFactor: any, reserveFactor: any, adminFee: any, implementationAddress: any, options: any, bypassPriceFeedCheck: any) => Promise<any[]>;
+  compoundContracts: any;
+  openOracleContracts: any;
+  getInterestRateModel: (assetAddress: any) => Promise<any>;
 
 
   constructor(provider: any, options: FuseOptions = {}) {
@@ -48,6 +61,8 @@ class Fuse {
       FusePoolDirectory: new this.web3.eth.Contract(fusePoolDirectoryAbi, Fuse.FUSE_POOL_DIRECTORY_CONTRACT_ADDRESS),
       FuseSafeLiquidator: new this.web3.eth.Contract(fuseSafeLiquidatorAbi, Fuse.FUSE_SAFE_LIQUIDATOR_CONTRACT_ADDRESS)
     };
+    this.compoundContracts = contracts;
+    this.openOracleContracts = openOracleContracts;
 
     this.getCreate2Address = function(creatorAddress, salt, byteCode) {
       return `0x${this.web3.utils.sha3(`0x${[
@@ -208,7 +223,7 @@ class Fuse {
       // Deploy new interest rate model via SDK if requested
       if (["WhitePaperInterestRateModel", "JumpRateModel", "DAIInterestRateModelV2"].indexOf(conf.interestRateModel) >= 0) {
         try {
-          conf.interestRateModel = await this.deployInterestRateModel(conf.interestRateModel, options); // TODO: anchorMantissa
+          conf.interestRateModel = await this.deployInterestRateModel(conf.interestRateModel, conf.interestRateModelConf, options); // TODO: anchorMantissa
         } catch (error) {
           throw "Deployment of interest rate model failed: " + (error.message ? error.message : error);
         }
@@ -224,15 +239,36 @@ class Fuse {
       return [assetAddress, implementationAddress, conf.interestRateModel];
     }
 
-    this.deployInterestRateModel = async function(model, options) {
-      if (!model) model = "JumpRateModel";
+    this.deployInterestRateModel = async function(model, conf, options) {
+      // Default model = JumpRateModel
+      if (!model) {
+        model = "JumpRateModel";
+        conf = { baseRatePerYear: "19999999999728000", multiplierPerYear: "199999999999382400", jumpMultiplierPerYear: "1999999999998028800", kink: "900000000000000000" };
+      }
+
+      // Get deployArgs
+      var deployArgs = [];
+
+      switch (model) {
+        case "JumpRateModel":
+          deployArgs = [conf.baseRatePerYear, conf.multiplierPerYear, conf.jumpMultiplierPerYear, conf.kink];
+          break;
+        case "DAIInterestRateModelV2":
+          deployArgs = [conf.jumpMultiplierPerYear, conf.kink, Fuse.DAI_POT, Fuse.DAI_JUG];
+          break;
+        case "WhitePaperInterestRateModel":
+          deployArgs = [conf.baseRatePerBlock, conf.multiplierPerBlock];
+          break;
+      }
+
+      // Deploy InterestRateModel
       var interestRateModel = new this.web3.eth.Contract(JSON.parse(contracts["contracts/" + model + ".sol:" + model].abi));
-      interestRateModel = await interestRateModel.deploy({ data: "0x" + contracts["contracts/" + model + ".sol:" + model].bin }).send(options);
+      interestRateModel = await interestRateModel.deploy({ data: "0x" + contracts["contracts/" + model + ".sol:" + model].bin, arguments: deployArgs }).send(options);
       return interestRateModel.options.address;
     };
 
     this.deployCToken = async function(conf, supportMarket, collateralFactor, reserveFactor, adminFee, options, bypassPriceFeedCheck) {
-      return conf.underlying !== undefined && conf.underlying !== null && conf.underlying.length > 0 ? await this.deployCErc20(conf, supportMarket, collateralFactor, reserveFactor, adminFee, Fuse.CERC20_DELEGATE_CONTRACT_ADDRESS ? Fuse.CERC20_DELEGATE_CONTRACT_ADDRESS : null, options, bypassPriceFeedCheck) : [await this.deployCEther(conf, supportMarket, collateralFactor, reserveFactor, adminFee, Fuse.CETHER_DELEGATE_CONTRACT_ADDRESS ? Fuse.CETHER_DELEGATE_CONTRACT_ADDRESS : null, options)];
+      return conf.underlying !== undefined && conf.underlying !== null && conf.underlying.length > 0 ? await this.deployCErc20(conf, supportMarket, collateralFactor, reserveFactor, adminFee, Fuse.CERC20_DELEGATE_CONTRACT_ADDRESS ? Fuse.CERC20_DELEGATE_CONTRACT_ADDRESS : null, options, bypassPriceFeedCheck) : await this.deployCEther(conf, supportMarket, collateralFactor, reserveFactor, adminFee, Fuse.CETHER_DELEGATE_CONTRACT_ADDRESS ? Fuse.CETHER_DELEGATE_CONTRACT_ADDRESS : null, options);
     };
 
     this.deployCEther = async function(conf, supportMarket, collateralFactor, reserveFactor, adminFee, implementationAddress, options) {
@@ -427,6 +463,25 @@ class Fuse {
 
       // Return cToken proxy and implementation contract addresses
       return [cErc20Delegator.options.address, implementationAddress];
+    };
+
+    this.getInterestRateModel = async function(assetAddress) {
+      // Get interest rate model address from asset address
+      var assetContract = new this.web3.eth.Contract(JSON.parse(contracts["contracts/CTokenInterfaces.sol:CTokenInterface"].abi), assetAddress);
+      var interestRateModelAddress = await assetContract.methods.interestRateModel().call();
+  
+      // Get interest rate model type and init class
+      var interestRateModels = {
+        "JumpRateModel": JumpRateModel,
+        "DAIInterestRateModelV2": DAIInterestRateModelV2,
+        "WhitePaperInterestRateModel": WhitePaperInterestRateModel
+      };
+  
+      var bytecode = await this.web3.eth.getCode(interestRateModelAddress);
+      var interestRateModel = null;
+      for (const model of ["JumpRateModel", "DAIInterestRateModelV2", "WhitePaperInterestRateModel"]) if (bytecode == interestRateModels[model].RUNTIME_BYTECODE) interestRateModel = new interestRateModels[model]();
+      await interestRateModel.init(this.web3, interestRateModelAddress, assetAddress);
+      return interestRateModel;
     };
   }
 }
