@@ -37,12 +37,12 @@ export default class Fuse {
     this.compoundContracts = contracts;
     this.openOracleContracts = openOracleContracts;
 
-    this.getCreate2Address = function(creatorAddress, salt, byteCode) {
+    this.getCreate2Address = function(creatorAddress, salts, byteCodeHash) {
       return `0x${this.web3.utils.sha3(`0x${[
         'ff',
         creatorAddress,
-        this.web3.utils.soliditySha3(salt),
-        this.web3.utils.sha3(byteCode)
+        this.web3.utils.soliditySha3(...salts),
+        byteCodeHash
       ].map(x => x.replace(/0x/, ''))
       .join('')}`).slice(-40)}`.toLowerCase()
     }
@@ -74,7 +74,7 @@ export default class Fuse {
       }
 
       // Compute Unitroller address
-      var poolAddress = this.getCreate2Address(Fuse.FUSE_POOL_DIRECTORY_CONTRACT_ADDRESS, poolName, "0x" + contracts["contracts/Unitroller.sol:Unitroller"].bin)
+      var poolAddress = this.getCreate2Address(Fuse.FUSE_POOL_DIRECTORY_CONTRACT_ADDRESS, [options.from, poolName, receipt.blockNumber], this.web3.utils.sha3("0x" + contracts["contracts/Unitroller.sol:Unitroller"].bin));
       var unitroller = new this.web3.eth.Contract(JSON.parse(contracts["contracts/Unitroller.sol:Unitroller"].abi), poolAddress);
 
       // Accept admin status via Unitroller
