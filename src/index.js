@@ -243,7 +243,7 @@ export default class Fuse {
     };
     
     this.deployCToken = async function(conf, supportMarket, collateralFactor, reserveFactor, adminFee, options, bypassPriceFeedCheck) {
-      return conf.underlying !== undefined && conf.underlying !== null && conf.underlying.length > 0 ? await this.deployCErc20(conf, supportMarket, collateralFactor, reserveFactor, adminFee, Fuse.CERC20_DELEGATE_CONTRACT_ADDRESS ? Fuse.CERC20_DELEGATE_CONTRACT_ADDRESS : null, options, bypassPriceFeedCheck) : await this.deployCEther(conf, supportMarket, collateralFactor, reserveFactor, adminFee, Fuse.CETHER_DELEGATE_CONTRACT_ADDRESS ? Fuse.CETHER_DELEGATE_CONTRACT_ADDRESS : null, options);
+      return conf.underlying !== undefined && conf.underlying !== null && conf.underlying.length > 0 && !Web3.utils.toBN(conf.underlying).isZero() ? await this.deployCErc20(conf, supportMarket, collateralFactor, reserveFactor, adminFee, Fuse.CERC20_DELEGATE_CONTRACT_ADDRESS ? Fuse.CERC20_DELEGATE_CONTRACT_ADDRESS : null, options, bypassPriceFeedCheck) : await this.deployCEther(conf, supportMarket, collateralFactor, reserveFactor, adminFee, Fuse.CETHER_DELEGATE_CONTRACT_ADDRESS ? Fuse.CETHER_DELEGATE_CONTRACT_ADDRESS : null, options);
     };
     
     this.deployCEther = async function(conf, supportMarket, collateralFactor, reserveFactor, adminFee, implementationAddress, options) {
