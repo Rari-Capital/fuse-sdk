@@ -123,7 +123,7 @@ export default class Fuse {
           if (!conf.chainlinkPriceOracle) conf.chainlinkPriceOracle = await this.deployPriceOracle("ChainlinkPriceOracle", {}, options);
           
           // Deploy Uniswap price oracle
-          if (!conf.uniswapPriceOracle) conf.uniswapPriceOracle = await this.deployPriceOracle("UniswapView", { isPublic: conf.isPublic }, options);
+          if (!conf.uniswapPriceOracle) conf.uniswapPriceOracle = await this.deployPriceOracle("UniswapView", { anchorPeriod: conf.anchorPeriod, tokenConfigs: conf.tokenConfigs, isPublic: conf.isPublic }, options);
 
           // Deploy PreferredPriceOracle
           var priceOracle = new this.web3.eth.Contract(JSON.parse(contracts["contracts/PreferredPriceOracle.sol:PreferredPriceOracle"].abi));
