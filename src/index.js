@@ -161,7 +161,7 @@ export default class Fuse {
         case "UniswapView":
           if (!conf || conf.anchorPeriod === undefined || conf.anchorPeriod === null) conf.anchorPeriod = 30 * 60;
           var priceOracle = new this.web3.eth.Contract(JSON.parse(openOracleContracts["contracts/Uniswap/UniswapView.sol:UniswapView"].abi));
-          var deployArgs = [conf.anchorPeriod, conf.tokenConfigs !== undefined ? conf.tokenConfigs : [], conf.isPublic ? true : false];
+          var deployArgs = [conf.anchorPeriod, conf.tokenConfigs !== undefined ? conf.tokenConfigs : [], conf.canAdminOverwrite && !conf.isPublic ? true : false, conf.isPublic ? true : false];
           priceOracle = await priceOracle.deploy({ data: "0x" + openOracleContracts["contracts/Uniswap/UniswapView.sol:UniswapView"].bin, arguments: deployArgs }).send(options);
           break;
         default:
