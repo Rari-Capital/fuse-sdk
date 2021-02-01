@@ -149,7 +149,7 @@ export default class Fuse {
             TWAP: 3
           };
           var tokenConfigs = [{ underlying: "0x0000000000000000000000000000000000000000", symbolHash: Web3.utils.soliditySha3("ETH"), baseUnit: Web3.utils.toBN(1e18).toString(), priceSource: PriceSource.REPORTER, fixedPrice: 0, uniswapMarket: "0xB4e16d0168e52d35CaCD2c6185b44281Ec28C9Dc", isUniswapReversed: true }];
-          var deployArgs = [Fuse.OPEN_ORACLE_PRICE_DATA_CONTRACT_ADDRESS, conf.reporter, conf.anchorMantissa, conf.anchorPeriod, tokenConfigs];
+          var deployArgs = [Fuse.OPEN_ORACLE_PRICE_DATA_CONTRACT_ADDRESS, conf.reporter, conf.anchorMantissa, conf.anchorPeriod, tokenConfigs, conf.canAdminOverwrite ? true : false];
           priceOracle = await priceOracle.deploy({ data: "0x" + openOracleContracts["contracts/Uniswap/UniswapAnchoredView.sol:UniswapAnchoredView"].bin, arguments: deployArgs }).send(options);
 
           // Post reported ETH/USD price or (if price has never been reported) have user report and post price
