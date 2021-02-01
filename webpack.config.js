@@ -3,7 +3,7 @@ const TerserPlugin = require('terser-webpack-plugin');
 
 module.exports = [
   /* createConfig('commonjs2'), */
-  /* createConfig('commonjs2', 'node'), */
+  createConfig('commonjs2', 'node'),
   createConfig('window')
 ];
 
