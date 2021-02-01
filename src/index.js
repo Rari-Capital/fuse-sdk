@@ -116,6 +116,7 @@ export default class Fuse {
 
     this.deployPriceOracle = async function(model, conf, options) {
       if (!model) model = "PreferredPriceOracle";
+      if (!conf) conf = {};
 
       switch (model) {
         case "PreferredPriceOracle":
@@ -136,9 +137,9 @@ export default class Fuse {
           break;
         case "UniswapAnchoredView":
           // Input validation/default config
-          if (!conf || conf.reporter === undefined || conf.reporter === null || conf.reporter === "") conf.reporter = Fuse.COINBASE_PRO_REPORTER_ADDRESS;
-          if (!conf || conf.anchorMantissa === undefined || conf.anchorMantissa === null) conf.anchorMantissa = Web3.utils.toBN(1e17); // 1e17 equates to 10% tolerance for source price to be above or below anchor
-          if (!conf || conf.anchorPeriod === undefined || conf.anchorPeriod === null) conf.anchorPeriod = 30 * 60;
+          if (conf.reporter === undefined || conf.reporter === null || conf.reporter === "") conf.reporter = Fuse.COINBASE_PRO_REPORTER_ADDRESS;
+          if (conf.anchorMantissa === undefined || conf.anchorMantissa === null) conf.anchorMantissa = Web3.utils.toBN(1e17); // 1e17 equates to 10% tolerance for source price to be above or below anchor
+          if (conf.anchorPeriod === undefined || conf.anchorPeriod === null) conf.anchorPeriod = 30 * 60;
 
           // Deploy UniswapAnchoredView with ETH token config
           var priceOracle = new this.web3.eth.Contract(JSON.parse(openOracleContracts["contracts/Uniswap/UniswapAnchoredView.sol:UniswapAnchoredView"].abi));
@@ -159,7 +160,7 @@ export default class Fuse {
           
           break;
         case "UniswapView":
-          if (!conf || conf.anchorPeriod === undefined || conf.anchorPeriod === null) conf.anchorPeriod = 30 * 60;
+          if (conf.anchorPeriod === undefined || conf.anchorPeriod === null) conf.anchorPeriod = 30 * 60;
           var priceOracle = new this.web3.eth.Contract(JSON.parse(openOracleContracts["contracts/Uniswap/UniswapView.sol:UniswapView"].abi));
           var deployArgs = [conf.anchorPeriod, conf.tokenConfigs !== undefined ? conf.tokenConfigs : [], conf.canAdminOverwrite && !conf.isPublic ? true : false, conf.isPublic ? true : false];
           priceOracle = await priceOracle.deploy({ data: "0x" + openOracleContracts["contracts/Uniswap/UniswapView.sol:UniswapView"].bin, arguments: deployArgs }).send(options);
