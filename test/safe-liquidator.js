@@ -5,9 +5,10 @@ const Fuse = require("../dist/fuse.node.commonjs2.js");
 
 assert(process.env.TESTING_WEB3_PROVIDER_URL, "Web3 provider URL required");
 var fuse = new Fuse(process.env.TESTING_WEB3_PROVIDER_URL);
+
 var erc20Abi = JSON.parse(fuse.compoundContracts["contracts/EIP20Interface.sol:EIP20Interface"].abi);
-var cErc20Abi = JSON.parse(fuse.compoundContracts["contracts/CErc20.sol:CErc20"].abi);
-var cEtherAbi = JSON.parse(fuse.compoundContracts["contracts/CEther.sol:CEther"].abi);
+var cErc20Abi = JSON.parse(fuse.compoundContracts["contracts/CErc20Delegate.sol:CErc20Delegate"].abi);
+var cEtherAbi = JSON.parse(fuse.compoundContracts["contracts/CEtherDelegate.sol:CEtherDelegate"].abi);
 
 // Snapshot + revert + dry run wrapper function
 var snapshotId = null;

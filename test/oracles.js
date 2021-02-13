@@ -7,6 +7,10 @@ const Fuse = require("../dist/fuse.node.commonjs2.js");
 assert(process.env.TESTING_WEB3_PROVIDER_URL, "Web3 provider URL required");
 var fuse = new Fuse(process.env.TESTING_WEB3_PROVIDER_URL);
 
+var erc20Abi = JSON.parse(fuse.compoundContracts["contracts/EIP20Interface.sol:EIP20Interface"].abi);
+var cErc20Abi = JSON.parse(fuse.compoundContracts["contracts/CErc20Delegate.sol:CErc20Delegate"].abi);
+var comptrollerAbi = JSON.parse(fuse.compoundContracts["contracts/Comptroller.sol:Comptroller"].abi);
+
 // Deploy pool + assets
 async function deployPool(conf, options) {
   if (conf.closeFactor === undefined) conf.poolName = "Example Fuse Pool " + (new Date()).getTime();
@@ -72,7 +76,7 @@ describe('UniswapView', function() {
 
     // Deploy pool
     var [poolAddress, priceOracleAddress] = await deployPool({ priceOracle: "UniswapView", priceOracleConf: { tokenConfigs } }, { from: accounts[0], gasPrice: "0" });
-    comptroller = new fuse.web3.eth.Contract(JSON.parse(fuse.compoundContracts["contracts/Comptroller.sol:Comptroller"].abi), poolAddress);
+    comptroller = new fuse.web3.eth.Contract(comptrollerAbi, poolAddress);
     uniswapView = new fuse.web3.eth.Contract(JSON.parse(fuse.openOracleContracts["contracts/Uniswap/UniswapView.sol:UniswapView"].abi), priceOracleAddress);
 
     // Post prices for TWAP assets
@@ -95,8 +99,8 @@ describe('UniswapView', function() {
   describe('#getUnderlyingPrice()', function() {
     it('should check token prices', async function() {
       for (const symbol of Object.keys(assetAddresses)) {
-        var underlying = symbol === "fETH" ? null : await (new fuse.web3.eth.Contract(JSON.parse(fuse.compoundContracts["contracts/CErc20.sol:CErc20"].abi), assetAddresses[symbol])).methods.underlying().call();
-        var oraclePrice = (await uniswapView.methods.getUnderlyingPrice(assetAddresses[symbol]).call()) / (10 ** (36 - (symbol === "fETH" ? 18 : (await (new fuse.web3.eth.Contract(JSON.parse(fuse.compoundContracts["contracts/EIP20Interface.sol:EIP20Interface"].abi), underlying)).methods.decimals().call()))));
+        var underlying = symbol === "fETH" ? null : await (new fuse.web3.eth.Contract(cErc20Abi, assetAddresses[symbol])).methods.underlying().call();
+        var oraclePrice = (await uniswapView.methods.getUnderlyingPrice(assetAddresses[symbol]).call()) / (10 ** (36 - (symbol === "fETH" ? 18 : (await (new fuse.web3.eth.Contract(erc20Abi, underlying)).methods.decimals().call()))));
         var expectedPrice = symbol === "fETH" ? 1 : (await getTokenPrice(underlying));
         // console.log(symbol + ": " + oraclePrice + " ETH (expected " + expectedPrice + " ETH)");
         assert(oraclePrice >= expectedPrice * (symbol == "fRGT" ? 0.9 : 0.95) && oraclePrice <= expectedPrice * (symbol == "fRGT" ? 1.1 : 1.05));
@@ -175,7 +179,7 @@ describe('UniswapView (public)', function() {
 
     // Actually deploy pool
     var [poolAddress, priceOracleAddress] = await deployPool({ priceOracle: "UniswapView", priceOracleConf: { tokenConfigs, isPublic: true } }, { from: accounts[0], gasPrice: "0" });
-    comptroller = new fuse.web3.eth.Contract(JSON.parse(fuse.compoundContracts["contracts/Comptroller.sol:Comptroller"].abi), poolAddress);
+    comptroller = new fuse.web3.eth.Contract(comptrollerAbi, poolAddress);
     uniswapView = new fuse.web3.eth.Contract(JSON.parse(fuse.openOracleContracts["contracts/Uniswap/UniswapView.sol:UniswapView"].abi), priceOracleAddress);
 
     // Post prices for TWAP assets
@@ -198,8 +202,8 @@ describe('UniswapView (public)', function() {
   describe('#getUnderlyingPrice()', function() {
     it('should check token prices', async function() {
       for (const symbol of Object.keys(assetAddresses)) {
-        var underlying = symbol === "fETH" ? null : await (new fuse.web3.eth.Contract(JSON.parse(fuse.compoundContracts["contracts/CErc20.sol:CErc20"].abi), assetAddresses[symbol])).methods.underlying().call();
-        var oraclePrice = (await uniswapView.methods.getUnderlyingPrice(assetAddresses[symbol]).call()) / (10 ** (36 - (symbol === "fETH" ? 18 : (await (new fuse.web3.eth.Contract(JSON.parse(fuse.compoundContracts["contracts/EIP20Interface.sol:EIP20Interface"].abi), underlying)).methods.decimals().call()))));
+        var underlying = symbol === "fETH" ? null : await (new fuse.web3.eth.Contract(cErc20Abi, assetAddresses[symbol])).methods.underlying().call();
+        var oraclePrice = (await uniswapView.methods.getUnderlyingPrice(assetAddresses[symbol]).call()) / (10 ** (36 - (symbol === "fETH" ? 18 : (await (new fuse.web3.eth.Contract(erc20Abi, underlying)).methods.decimals().call()))));
         var expectedPrice = symbol === "fETH" ? 1 : (await getTokenPrice(underlying));
         // console.log(symbol + ": " + oraclePrice + " ETH (expected " + expectedPrice + " ETH)");
         assert(oraclePrice >= expectedPrice * (symbol == "fRGT" ? 0.9 : 0.95) && oraclePrice <= expectedPrice * (symbol == "fRGT" ? 1.1 : 1.05));
@@ -218,7 +222,7 @@ describe('UniswapAnchoredView (Coinbase)', function() {
 
     // Deploy pool
     var [poolAddress, priceOracleAddress] = await deployPool({ priceOracle: "UniswapAnchoredView" }, { from: accounts[0], gasPrice: "0" });
-    comptroller = new fuse.web3.eth.Contract(JSON.parse(fuse.compoundContracts["contracts/Comptroller.sol:Comptroller"].abi), poolAddress);
+    comptroller = new fuse.web3.eth.Contract(comptrollerAbi, poolAddress);
     uniswapAnchoredView = new fuse.web3.eth.Contract(JSON.parse(fuse.openOracleContracts["contracts/Uniswap/UniswapAnchoredView.sol:UniswapAnchoredView"].abi), priceOracleAddress);
 
     // Add more token configs
@@ -257,8 +261,8 @@ describe('UniswapAnchoredView (Coinbase)', function() {
   describe('#getUnderlyingPrice()', function() {
     it('should check token prices', async function() {
       for (const symbol of Object.keys(assetAddresses)) {
-        var underlying = symbol === "fETH" ? null : await (new fuse.web3.eth.Contract(JSON.parse(fuse.compoundContracts["contracts/CErc20.sol:CErc20"].abi), assetAddresses[symbol])).methods.underlying().call();
-        var oraclePrice = (await uniswapAnchoredView.methods.getUnderlyingPrice(assetAddresses[symbol]).call()) / (10 ** (36 - (symbol === "fETH" ? 18 : (await (new fuse.web3.eth.Contract(JSON.parse(fuse.compoundContracts["contracts/EIP20Interface.sol:EIP20Interface"].abi), underlying)).methods.decimals().call()))));
+        var underlying = symbol === "fETH" ? null : await (new fuse.web3.eth.Contract(cErc20Abi, assetAddresses[symbol])).methods.underlying().call();
+        var oraclePrice = (await uniswapAnchoredView.methods.getUnderlyingPrice(assetAddresses[symbol]).call()) / (10 ** (36 - (symbol === "fETH" ? 18 : (await (new fuse.web3.eth.Contract(erc20Abi, underlying)).methods.decimals().call()))));
         var expectedPrice = symbol === "fETH" ? 1 : (await getTokenPrice(underlying));
         // console.log(symbol + ": " + oraclePrice + " ETH (expected " + expectedPrice + " ETH)");
         assert(oraclePrice >= expectedPrice * 0.95 && oraclePrice <= expectedPrice * 1.05);
@@ -277,7 +281,7 @@ describe('ChainlinkPriceOracle', function() {
 
     // Deploy pool
     var [poolAddress, priceOracleAddress] = await deployPool({ priceOracle: "ChainlinkPriceOracle" }, { from: accounts[0], gasPrice: "0" });
-    comptroller = new fuse.web3.eth.Contract(JSON.parse(fuse.compoundContracts["contracts/Comptroller.sol:Comptroller"].abi), poolAddress);
+    comptroller = new fuse.web3.eth.Contract(comptrollerAbi, poolAddress);
     chainlinkPriceOracle = new fuse.web3.eth.Contract(JSON.parse(fuse.compoundContracts["contracts/ChainlinkPriceOracle.sol:ChainlinkPriceOracle"].abi), priceOracleAddress);
 
     // Deploy assets
@@ -297,8 +301,8 @@ describe('ChainlinkPriceOracle', function() {
   describe('#getUnderlyingPrice()', function() {
     it('should check token prices', async function() {
       for (const symbol of Object.keys(assetAddresses)) {
-        var underlying = symbol === "fETH" ? null : await (new fuse.web3.eth.Contract(JSON.parse(fuse.compoundContracts["contracts/CErc20.sol:CErc20"].abi), assetAddresses[symbol])).methods.underlying().call();
-        var oraclePrice = (await chainlinkPriceOracle.methods.getUnderlyingPrice(assetAddresses[symbol]).call()) / (10 ** (36 - (symbol === "fETH" ? 18 : (await (new fuse.web3.eth.Contract(JSON.parse(fuse.compoundContracts["contracts/EIP20Interface.sol:EIP20Interface"].abi), underlying)).methods.decimals().call()))));
+        var underlying = symbol === "fETH" ? null : await (new fuse.web3.eth.Contract(cErc20Abi, assetAddresses[symbol])).methods.underlying().call();
+        var oraclePrice = (await chainlinkPriceOracle.methods.getUnderlyingPrice(assetAddresses[symbol]).call()) / (10 ** (36 - (symbol === "fETH" ? 18 : (await (new fuse.web3.eth.Contract(erc20Abi, underlying)).methods.decimals().call()))));
         var expectedPrice = symbol === "fETH" ? 1 : (await getTokenPrice(underlying));
         // console.log(symbol + ": " + oraclePrice + " ETH (expected " + expectedPrice + " ETH)");
         assert(oraclePrice >= expectedPrice * 0.95 && oraclePrice <= expectedPrice * 1.05);
@@ -329,7 +333,7 @@ describe('PreferredPriceOracle', function() {
 
     // Deploy pool
     var [poolAddress, priceOracleAddress] = await deployPool({ priceOracle: "PreferredPriceOracle", priceOracleConf: { tokenConfigs } }, { from: accounts[0], gasPrice: "0" });
-    comptroller = new fuse.web3.eth.Contract(JSON.parse(fuse.compoundContracts["contracts/Comptroller.sol:Comptroller"].abi), poolAddress);
+    comptroller = new fuse.web3.eth.Contract(comptrollerAbi, poolAddress);
     preferredPriceOracle = new fuse.web3.eth.Contract(JSON.parse(fuse.compoundContracts["contracts/PreferredPriceOracle.sol:PreferredPriceOracle"].abi), priceOracleAddress);
     var uniswapViewAddress = await preferredPriceOracle.methods.secondaryOracle().call();
     var uniswapView = new fuse.web3.eth.Contract(JSON.parse(fuse.openOracleContracts["contracts/Uniswap/UniswapView.sol:UniswapView"].abi), uniswapViewAddress);
@@ -355,8 +359,8 @@ describe('PreferredPriceOracle', function() {
   describe('#getUnderlyingPrice()', function() {
     it('should check token prices', async function() {
       for (const symbol of Object.keys(assetAddresses)) {
-        var underlying = symbol === "fETH" ? null : await (new fuse.web3.eth.Contract(JSON.parse(fuse.compoundContracts["contracts/CErc20.sol:CErc20"].abi), assetAddresses[symbol])).methods.underlying().call();
-        var oraclePrice = (await preferredPriceOracle.methods.getUnderlyingPrice(assetAddresses[symbol]).call()) / (10 ** (36 - (symbol === "fETH" ? 18 : (await (new fuse.web3.eth.Contract(JSON.parse(fuse.compoundContracts["contracts/EIP20Interface.sol:EIP20Interface"].abi), underlying)).methods.decimals().call()))));
+        var underlying = symbol === "fETH" ? null : await (new fuse.web3.eth.Contract(cErc20Abi, assetAddresses[symbol])).methods.underlying().call();
+        var oraclePrice = (await preferredPriceOracle.methods.getUnderlyingPrice(assetAddresses[symbol]).call()) / (10 ** (36 - (symbol === "fETH" ? 18 : (await (new fuse.web3.eth.Contract(erc20Abi, underlying)).methods.decimals().call()))));
         var expectedPrice = symbol === "fETH" ? 1 : (await getTokenPrice(underlying));
         // console.log(symbol + ": " + oraclePrice + " ETH (expected " + expectedPrice + " ETH)");
         assert(oraclePrice >= expectedPrice * (symbol == "fRGT" ? 0.9 : 0.95) && oraclePrice <= expectedPrice * (symbol == "fRGT" ? 1.1 : 1.05));

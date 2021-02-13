@@ -7,33 +7,49 @@ import WhitePaperInterestRateModel from "./irm/WhitePaperInterestRateModel.js";
 
 var fusePoolDirectoryAbi = require(__dirname + "/abi/FusePoolDirectory.json");
 var fuseSafeLiquidatorAbi = require(__dirname + "/abi/FuseSafeLiquidator.json");
-var contracts = require(__dirname + "/contracts/compound-protocol.json").contracts;
-var openOracleContracts = require(__dirname + "/contracts/open-oracle.json").contracts;
+var fuseFeeDistrbutorAbi = require(__dirname + "/abi/FuseFeeDistributor.json");
+var contracts = require(__dirname + "/contracts/compound-protocol.min.json").contracts;
+var openOracleContracts = require(__dirname + "/contracts/open-oracle.min.json").contracts;
 
 export default class Fuse {
-  static FUSE_POOL_DIRECTORY_CONTRACT_ADDRESS = "0xDc64a140Aa3E981100a9becA4E685f962f0cF6C9";
-  static FUSE_SAFE_LIQUIDATOR_CONTRACT_ADDRESS = "0x0165878A594ca255338adfa4d48449f69242Eb8F";
+  static FUSE_POOL_DIRECTORY_CONTRACT_ADDRESS = "0xDc64a140Aa3E981100a9becA4E685f962f0cF6C9"; // TODO: Set correct mainnet address after deployment
+  static FUSE_SAFE_LIQUIDATOR_CONTRACT_ADDRESS = "0x0165878A594ca255338adfa4d48449f69242Eb8F"; // TODO: Set correct mainnet address after deployment
+  static FUSE_FEE_DISTRIBUTOR_CONTRACT_ADDRESS = "0x2279B7A0a67DB372996a5FaB50D91eAA73d2eBe6"; // TODO: Set correct mainnet address after deployment
 
-  static COMPTROLLER_IMPLEMENTATION_CONTRACT_ADDRESS;
-  static CERC20_DELEGATE_CONTRACT_ADDRESS;
-  static CETHER_DELEGATE_CONTRACT_ADDRESS;
+  static COMPTROLLER_IMPLEMENTATION_CONTRACT_ADDRESS = "0xE14E15c2a43232791bd35B326BC5446CC2Ad9CD7"; // TODO: Set correct mainnet address after deployment
+  static CERC20_DELEGATE_CONTRACT_ADDRESS = "0x99dF4ba7A2404e2cDFDa8c6427e03E13EA23D19f"; // TODO: Set correct mainnet address after deployment
+  static CETHER_DELEGATE_CONTRACT_ADDRESS = "0x026838c33C05caCe3495bfE51261f7D942fddf8A"; // TODO: Set correct mainnet address after deployment
 
   static OPEN_ORACLE_PRICE_DATA_CONTRACT_ADDRESS = "0xc629c26dced4277419cde234012f8160a0278a79";
   static COINBASE_PRO_REPORTER_ADDRESS = "0xfCEAdAFab14d46e20144F48824d0C09B1a03F2BC";
 
-  static PUBLIC_PREFERRED_PRICE_ORACLE_CONTRACT_ADDRESS;
-  static PUBLIC_CHAINLINK_PRICE_ORACLE_CONTRACT_ADDRESS;
-  static PUBLIC_UNISWAP_VIEW_CONTRACT_ADDRESS;
+  static PUBLIC_PREFERRED_PRICE_ORACLE_CONTRACT_ADDRESS = "0x68aa7c6be5eDbb8434dCE624b8583FE4c25Cac8B"; // TODO: Set correct mainnet address after deployment
+  static PUBLIC_CHAINLINK_PRICE_ORACLE_CONTRACT_ADDRESS = "0x5fdbfc67a415a811dd8e5de570ddf65207ceb94f"; // TODO: Set correct mainnet address after deployment
+  static PUBLIC_UNISWAP_VIEW_CONTRACT_ADDRESS = "0x68ae90e1da41761aad06a7f188584ca806012f5e"; // TODO: Set correct mainnet address after deployment
 
   static DAI_POT = "0x197e90f9fad81970ba7976f33cbd77088e5d7cf7";
   static DAI_JUG = "0x19c0976f590d67707e62397c87829d896dc0f1f1";
 
+  static UNISWAP_V2_FACTORY_ADDRESS = "0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f";
+  static UNISWAP_V2_PAIR_INIT_CODE_HASH = "0x96e8ac4277198ff8b6f785478aa9a39f403cb768dd02cbee326c3e7da348845f";
+  static WETH_ADDRESS = "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2";
+
+  static PRICE_ORACLE_RUNTIME_BYTECODE_HASHES = {
+    "PreferredPriceOracle": "0x76520d6fcfcfa7f457ab83d7b73db055f7bad3bd5f064df2500abcbbdec6f11f",
+    "ChainlinkPriceOracle": "0x7390a299baa380530decfe24773f3b740db1ad552e3a241cde75cd9d74e7a3c7",
+    "UniswapView": "0x262201ec0397bfc12b95236a81826647a722f219c6d789449d287b1917273fbd",
+    "UniswapAnchoredView": "0x688f4a293eda38ea8a0f5e24576aace04b3d16a186838fc1c886bac8f33e1818"
+  };
+
   constructor(web3Provider) {
     this.web3 = new Web3(web3Provider);
+
     this.contracts = {
       FusePoolDirectory: new this.web3.eth.Contract(fusePoolDirectoryAbi, Fuse.FUSE_POOL_DIRECTORY_CONTRACT_ADDRESS),
-      FuseSafeLiquidator: new this.web3.eth.Contract(fuseSafeLiquidatorAbi, Fuse.FUSE_SAFE_LIQUIDATOR_CONTRACT_ADDRESS)
+      FuseSafeLiquidator: new this.web3.eth.Contract(fuseSafeLiquidatorAbi, Fuse.FUSE_SAFE_LIQUIDATOR_CONTRACT_ADDRESS),
+      FuseFeeDistrbutor: new this.web3.eth.Contract(fuseFeeDistrbutorAbi, Fuse.FUSE_FEE_DISTRIBUTOR_CONTRACT_ADDRESS)
     };
+
     this.compoundContracts = contracts;
     this.openOracleContracts = openOracleContracts;
 
@@ -219,7 +235,6 @@ export default class Fuse {
       // Default model = JumpRateModel
       if (!model) {
         model = "JumpRateModel";
-        conf = { baseRatePerYear: "19999999999728000", multiplierPerYear: "199999999999382400", jumpMultiplierPerYear: "1999999999998028800", kink: "900000000000000000" };
       }
 
       // Get deployArgs
@@ -227,12 +242,15 @@ export default class Fuse {
 
       switch (model) {
         case "JumpRateModel":
+          if (!conf) conf = { baseRatePerYear: "20000000000000000", multiplierPerYear: "200000000000000000", jumpMultiplierPerYear: "2000000000000000000", kink: "900000000000000000" };
           deployArgs = [conf.baseRatePerYear, conf.multiplierPerYear, conf.jumpMultiplierPerYear, conf.kink];
           break;
         case "DAIInterestRateModelV2":
+          if (!conf) conf = { jumpMultiplierPerYear: "2000000000000000000", kink: "900000000000000000" };
           deployArgs = [conf.jumpMultiplierPerYear, conf.kink, Fuse.DAI_POT, Fuse.DAI_JUG];
           break;
         case "WhitePaperInterestRateModel":
+          if (!conf) conf = { baseRatePerYear: "20000000000000000", multiplierPerYear: "200000000000000000" };
           deployArgs = [conf.baseRatePerBlock, conf.multiplierPerBlock];
           break;
       }
@@ -244,6 +262,17 @@ export default class Fuse {
     };
     
     this.deployCToken = async function(conf, supportMarket, collateralFactor, reserveFactor, adminFee, options, bypassPriceFeedCheck) {
+      // Check collateral factor
+      if (Web3.utils.toBN(collateralFactor).isNeg() || Web3.utils.toBN(collateralFactor).gt(Web3.utils.toBN(0.9e18))) throw "Collateral factor must range from 0 to 0.9.";
+
+      // Check reserve factor + admin fee + Fuse fee
+      if (Web3.utils.toBN(reserveFactor).isNeg()) throw "Reserve factor cannot be negative.";
+      if (Web3.utils.toBN(adminFee).isNeg()) throw "Admin fee cannot be negative.";
+      if (!Web3.utils.toBN(reserveFactor).isZero() || !Web3.utils.toBN(adminFee).isZero()) {
+        var fuseFee = await this.contracts.FuseFeeDistrbutor.methods.interestFeeRate().call();
+        if (Web3.utils.toBN(reserveFactor).add(Web3.utils.toBN(adminFee)).add(Web3.utils.toBN(fuseFee)).gt(Web3.utils.toBN(1e18))) throw "Sum of reserve factor and admin fee should range from 0 to " + (1 - (parseInt(fuseFee) / 1e18)) + ".";
+      }
+
       return conf.underlying !== undefined && conf.underlying !== null && conf.underlying.length > 0 && !Web3.utils.toBN(conf.underlying).isZero() ? await this.deployCErc20(conf, supportMarket, collateralFactor, reserveFactor, adminFee, Fuse.CERC20_DELEGATE_CONTRACT_ADDRESS ? Fuse.CERC20_DELEGATE_CONTRACT_ADDRESS : null, options, bypassPriceFeedCheck) : await this.deployCEther(conf, supportMarket, collateralFactor, reserveFactor, adminFee, Fuse.CETHER_DELEGATE_CONTRACT_ADDRESS ? Fuse.CETHER_DELEGATE_CONTRACT_ADDRESS : null, options);
     };
     
@@ -262,6 +291,7 @@ export default class Fuse {
 
       // Register new asset with Comptroller
       var comptroller = new this.web3.eth.Contract(JSON.parse(contracts["contracts/Comptroller.sol:Comptroller"].abi), conf.comptroller);
+      cEtherDelegator.options.jsonInterface = JSON.parse(contracts["contracts/CEtherDelegate.sol:CEtherDelegate"].abi);
       if (supportMarket) await comptroller.methods._supportMarket(cEtherDelegator.options.address).send(options);
       if (collateralFactor) await comptroller.methods._setCollateralFactor(cEtherDelegator.options.address, collateralFactor).send(options);
       if (reserveFactor) await cEtherDelegator.methods._setReserveFactor(reserveFactor).send(options);
@@ -396,23 +426,33 @@ export default class Fuse {
               } else await promptForUniswapV2Pair(this.web3); // Prompt for Uniswap V2 pair
 
               async function promptForUniswapV2Pair(web3) {
-                var uniswapV2Pair = prompt("Please enter the underlying token's ETH-based Uniswap V2 pair address:");
-        
-                if (uniswapV2Pair.length > 0) {
-                  var isNotReversed = confirm("Press OK if the Uniswap V2 pair is " + underlyingSymbol + "/ETH? If it is reversed (ETH/" + underlyingSymbol + "), press Cancel.");
-                  await uniswapOrUniswapAnchoredView.methods.add([{ underlying: conf.underlying, symbolHash: Web3.utils.soliditySha3(underlyingSymbol), baseUnit: Web3.utils.toBN(10).pow(Web3.utils.toBN(underlyingDecimals)).toString(), priceSource: isUniswapAnchoredView ? PriceSource.REPORTER : PriceSource.TWAP, fixedPrice: 0, uniswapMarket: uniswapV2Pair, isUniswapReversed: !isNotReversed }]).send({ ...options });
+                // Predict correct Uniswap V2 pair
+                var isNotReversed = conf.underlying.toLowerCase() < Fuse.WETH_ADDRESS.toLowerCase();
+                var tokens = isNotReversed ? [conf.underlying, Fuse.WETH_ADDRESS] : [Fuse.WETH_ADDRESS, conf.underlying];
+                var uniswapV2Pair = this.getCreate2Address(Fuse.UNISWAP_V2_FACTORY_ADDRESS, tokens, Fuse.UNISWAP_V2_PAIR_INIT_CODE_HASH);
 
-                  // Post first price
-                  if (isUniswapAnchoredView) {
-                    // Post reported price or (if price has never been reported) have user report and post price
-                    var priceData = new web3.eth.Contract(JSON.parse(openOracleContracts["contracts/OpenOraclePriceData.sol:OpenOraclePriceData"].abi), await uniswapOrUniswapAnchoredView.methods.priceData().call());
-                    var reporter = await uniswapOrUniswapAnchoredView.methods.reporter().call();
-                    if (Web3.utils.toBN(await priceData.methods.getPrice(reporter, underlyingSymbol).call()).gt(Web3.utils.toBN(0))) await uniswapOrUniswapAnchoredView.methods.postPrices([], [], [underlyingSymbol]).send({ ...options });
-                    else prompt("It looks like prices have never been reported for " + underlyingSymbol + ". Please click OK once you have reported and posted prices for" + underlyingSymbol + ".");
-                  } else {
-                    await uniswapOrUniswapAnchoredView.methods.postPrices([ conf.underlying ]).send({ ...options });
-                  }
-                } else throw isUniswapAnchoredView ? "Reported prices must have a Uniswap V2 pair as an anchor!" : "Non-fixed prices must have a Uniswap V2 pair from which to source prices!";
+                // Double-check with user that pair is correct
+                var correctUniswapV2Pair = confirm("We have determined that the correct Uniswap V2 pair for " + (isNotReversed ? underlyingSymbol + "/ETH" : "ETH/" + underlyingSymbol) + " is " + uniswapV2Pair + ". Is this correct?");
+
+                if (!correctUniswapV2Pair) {
+                  uniswapV2Pair = prompt("Please enter the underlying token's ETH-based Uniswap V2 pair address:");
+                  if (uniswapV2Pair.length == 0) throw isUniswapAnchoredView ? "Reported prices must have a Uniswap V2 pair as an anchor!" : "Non-fixed prices must have a Uniswap V2 pair from which to source prices!";
+                  isNotReversed = confirm("Press OK if the Uniswap V2 pair is " + underlyingSymbol + "/ETH. If it is reversed (ETH/" + underlyingSymbol + "), press Cancel.");
+                }
+
+                // Add asset to oracle
+                await uniswapOrUniswapAnchoredView.methods.add([{ underlying: conf.underlying, symbolHash: Web3.utils.soliditySha3(underlyingSymbol), baseUnit: Web3.utils.toBN(10).pow(Web3.utils.toBN(underlyingDecimals)).toString(), priceSource: isUniswapAnchoredView ? PriceSource.REPORTER : PriceSource.TWAP, fixedPrice: 0, uniswapMarket: uniswapV2Pair, isUniswapReversed: !isNotReversed }]).send({ ...options });
+
+                // Post first price
+                if (isUniswapAnchoredView) {
+                  // Post reported price or (if price has never been reported) have user report and post price
+                  var priceData = new web3.eth.Contract(JSON.parse(openOracleContracts["contracts/OpenOraclePriceData.sol:OpenOraclePriceData"].abi), await uniswapOrUniswapAnchoredView.methods.priceData().call());
+                  var reporter = await uniswapOrUniswapAnchoredView.methods.reporter().call();
+                  if (Web3.utils.toBN(await priceData.methods.getPrice(reporter, underlyingSymbol).call()).gt(Web3.utils.toBN(0))) await uniswapOrUniswapAnchoredView.methods.postPrices([], [], [underlyingSymbol]).send({ ...options });
+                  else prompt("It looks like prices have never been reported for " + underlyingSymbol + ". Please click OK once you have reported and posted prices for" + underlyingSymbol + ".");
+                } else {
+                  await uniswapOrUniswapAnchoredView.methods.postPrices([ conf.underlying ]).send({ ...options });
+                }
               }
             }
           }
@@ -432,6 +472,7 @@ export default class Fuse {
       cErc20Delegator = await cErc20Delegator.deploy({ data: "0x" + contracts["contracts/CErc20Delegator.sol:CErc20Delegator"].bin, arguments: deployArgs }).send(options);
 
       // Register new asset with Comptroller
+      cErc20Delegator.options.jsonInterface = JSON.parse(contracts["contracts/CErc20Delegate.sol:CErc20Delegate"].abi);
       if (supportMarket) await comptroller.methods._supportMarket(cErc20Delegator.options.address).send(options);
       if (collateralFactor) await comptroller.methods._setCollateralFactor(cErc20Delegator.options.address, collateralFactor).send(options);
       if (reserveFactor) await cErc20Delegator.methods._setReserveFactor(reserveFactor).send(options);
@@ -446,18 +487,26 @@ export default class Fuse {
       var assetContract = new this.web3.eth.Contract(JSON.parse(contracts["contracts/CTokenInterfaces.sol:CTokenInterface"].abi), assetAddress);
       var interestRateModelAddress = await assetContract.methods.interestRateModel().call();
   
-      // Get interest rate model type and init class
+      // Get interest rate model type from runtime bytecode hash and init class
       var interestRateModels = {
         "JumpRateModel": JumpRateModel,
         "DAIInterestRateModelV2": DAIInterestRateModelV2,
         "WhitePaperInterestRateModel": WhitePaperInterestRateModel
       };
   
-      var bytecode = await this.web3.eth.getCode(interestRateModelAddress);
+      var runtimeBytecodeHash = Web3.utils.sha3(await this.web3.eth.getCode(interestRateModelAddress));
       var interestRateModel = null;
-      for (const model of ["JumpRateModel", "DAIInterestRateModelV2", "WhitePaperInterestRateModel"]) if (bytecode == interestRateModels[model].RUNTIME_BYTECODE) interestRateModel = new interestRateModels[model]();
+      for (const model of ["JumpRateModel", "DAIInterestRateModelV2", "WhitePaperInterestRateModel"]) if (runtimeBytecodeHash == interestRateModels[model].RUNTIME_BYTECODE_HASH) interestRateModel = new interestRateModels[model]();
+      if (interestRateModel === null) return null;
       await interestRateModel.init(this.web3, interestRateModelAddress, assetAddress);
       return interestRateModel;
+    };
+
+    this.getPriceOracle = async function(oracleAddress) {
+      // Get price oracle contract name from runtime bytecode hash
+      var runtimeBytecodeHash = Web3.utils.sha3(await this.web3.eth.getCode(oracleAddress));
+      for (const model of ["PreferredPriceOracle", "ChainlinkPriceOracle", "UniswapView", "UniswapAnchoredView"]) if (runtimeBytecodeHash == Fuse.PRICE_ORACLE_RUNTIME_BYTECODE_HASHES[model]) return model;
+      return null;
     };
   }
 
