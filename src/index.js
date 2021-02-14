@@ -421,15 +421,15 @@ export default class Fuse {
 
                     // UniswapView only: post USDC price
                     if (!isUniswapAnchoredView) await uniswapOrUniswapAnchoredView.methods.postPrices(["0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"]).send({ ...options });
-                  } else await promptForUniswapV2Pair(this.web3); // Prompt for Uniswap V2 pair
+                  } else await promptForUniswapV2Pair(this); // Prompt for Uniswap V2 pair
                 }
-              } else await promptForUniswapV2Pair(this.web3); // Prompt for Uniswap V2 pair
+              } else await promptForUniswapV2Pair(this); // Prompt for Uniswap V2 pair
 
-              async function promptForUniswapV2Pair(web3) {
+              async function promptForUniswapV2Pair(self) {
                 // Predict correct Uniswap V2 pair
                 var isNotReversed = conf.underlying.toLowerCase() < Fuse.WETH_ADDRESS.toLowerCase();
                 var tokens = isNotReversed ? [conf.underlying, Fuse.WETH_ADDRESS] : [Fuse.WETH_ADDRESS, conf.underlying];
-                var uniswapV2Pair = this.getCreate2Address(Fuse.UNISWAP_V2_FACTORY_ADDRESS, tokens, Fuse.UNISWAP_V2_PAIR_INIT_CODE_HASH);
+                var uniswapV2Pair = self.getCreate2Address(Fuse.UNISWAP_V2_FACTORY_ADDRESS, tokens, Fuse.UNISWAP_V2_PAIR_INIT_CODE_HASH);
 
                 // Double-check with user that pair is correct
                 var correctUniswapV2Pair = confirm("We have determined that the correct Uniswap V2 pair for " + (isNotReversed ? underlyingSymbol + "/ETH" : "ETH/" + underlyingSymbol) + " is " + uniswapV2Pair + ". Is this correct?");
@@ -446,7 +446,7 @@ export default class Fuse {
                 // Post first price
                 if (isUniswapAnchoredView) {
                   // Post reported price or (if price has never been reported) have user report and post price
-                  var priceData = new web3.eth.Contract(JSON.parse(openOracleContracts["contracts/OpenOraclePriceData.sol:OpenOraclePriceData"].abi), await uniswapOrUniswapAnchoredView.methods.priceData().call());
+                  var priceData = new self.web3.eth.Contract(JSON.parse(openOracleContracts["contracts/OpenOraclePriceData.sol:OpenOraclePriceData"].abi), await uniswapOrUniswapAnchoredView.methods.priceData().call());
                   var reporter = await uniswapOrUniswapAnchoredView.methods.reporter().call();
                   if (Web3.utils.toBN(await priceData.methods.getPrice(reporter, underlyingSymbol).call()).gt(Web3.utils.toBN(0))) await uniswapOrUniswapAnchoredView.methods.postPrices([], [], [underlyingSymbol]).send({ ...options });
                   else prompt("It looks like prices have never been reported for " + underlyingSymbol + ". Please click OK once you have reported and posted prices for" + underlyingSymbol + ".");
