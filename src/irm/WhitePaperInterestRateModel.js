@@ -5,13 +5,6 @@ var contracts = require(__dirname + "/../contracts/compound-protocol.min.json").
 export default class WhitePaperInterestRateModel {
     this.RUNTIME_BYTECODE_HASH = "0x63d79af1b5e0b2cc00b5658d0c1456c1b6ccc205ba831fb1ddf39de43e21ade6";
 
-    initialized;
-
-    baseRatePerBlock;
-    multiplierPerBlock;
-    
-    reserveFactorMantissa;
-
     async init(web3, interestRateModelAddress, assetAddress) {
         var contract = new web3.eth.Contract(JSON.parse(contracts["contracts/WhitePaperInterestRateModel.sol:WhitePaperInterestRateModel"].abi), interestRateModelAddress);
         this.baseRatePerBlock = Web3.utils.toBN(await contract.methods.baseRatePerBlock().call());

@@ -4,15 +4,6 @@ var contracts = require(__dirname + "/../contracts/compound-protocol.min.json").
 
 export default class JumpRateModel {
     this.RUNTIME_BYTECODE_HASH = "0x59b14f439f54439a4238f78942b585f34e786dd5247650e18f8a99727fa8b7b6";
-    
-    initialized;
-
-    baseRatePerBlock;
-    multiplierPerBlock;
-    jumpMultiplierPerBlock;
-    kink;
-    
-    reserveFactorMantissa;
 
     async init(web3, interestRateModelAddress, assetAddress) {
         var contract = new web3.eth.Contract(JSON.parse(contracts["contracts/JumpRateModel.sol:JumpRateModel"].abi), interestRateModelAddress);
