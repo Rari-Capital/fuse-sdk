@@ -3,7 +3,7 @@ import Web3 from "web3";
 var contracts = require(__dirname + "/../contracts/compound-protocol.min.json").contracts;
 
 export default class WhitePaperInterestRateModel {
-    static RUNTIME_BYTECODE_HASH = "0x63d79af1b5e0b2cc00b5658d0c1456c1b6ccc205ba831fb1ddf39de43e21ade6";
+    this.RUNTIME_BYTECODE_HASH = "0x63d79af1b5e0b2cc00b5658d0c1456c1b6ccc205ba831fb1ddf39de43e21ade6";
 
     initialized;
 

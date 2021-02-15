@@ -5,8 +5,6 @@ import JumpRateModel from "./JumpRateModel.js";
 var contracts = require(__dirname + "/../contracts/compound-protocol.min.json").contracts;
 
 export default class DAIInterestRateModelV2 extends JumpRateModel {
-    static RUNTIME_BYTECODE_HASH = "0x44c31017cf8acb973002a343d9fdcf660da0b1ac0e3b56a360aadbf7ceefebd5";
-
     initialized;
 
     dsrPerBlock;
@@ -14,6 +12,8 @@ export default class DAIInterestRateModelV2 extends JumpRateModel {
     cash;
     borrows;
     reserves;
+
+    this.RUNTIME_BYTECODE_HASH = "0x44c31017cf8acb973002a343d9fdcf660da0b1ac0e3b56a360aadbf7ceefebd5";
     
     async init(web3, interestRateModelAddress, assetAddress) {
         await super.init(interestRateModelAddress, assetAddress);
