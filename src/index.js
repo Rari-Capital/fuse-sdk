@@ -15,6 +15,9 @@ var openOracleContracts = require(__dirname + "/contracts/open-oracle.min.json")
 
 export default class Fuse {
   constructor(web3Provider) {
+    this.Web3 = Web3;
+    this.BN = Web3.utils.BN;
+
     this.FUSE_POOL_DIRECTORY_CONTRACT_ADDRESS =
       "0xDc64a140Aa3E981100a9becA4E685f962f0cF6C9"; // TODO: Set correct mainnet address after deployment
     this.FUSE_SAFE_LIQUIDATOR_CONTRACT_ADDRESS =
@@ -1334,7 +1337,4 @@ export default class Fuse {
       return null;
     };
   }
-
-  static Web3 = Web3;
-  static BN = Web3.utils.BN;
 }
